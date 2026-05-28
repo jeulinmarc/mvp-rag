@@ -71,6 +71,7 @@ cd eigenmind/mvp
 Docker fait tourner Qdrant dans un conteneur isolé. Sans Docker, il faudrait installer Qdrant en natif (compliqué).
 
 **macOS** : télécharge Docker Desktop sur [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/). Choisis la version qui correspond à ton chip :
+
 - **Apple Silicon** (M1/M2/M3/M4)
 - **Intel**
 
@@ -81,6 +82,7 @@ Alternatives plus légères si Docker Desktop te paraît lourd : [OrbStack](http
 **Linux** : suis le guide officiel [docs.docker.com/engine/install](https://docs.docker.com/engine/install/).
 
 **Vérifie** :
+
 ```bash
 docker --version
 docker compose version
@@ -91,11 +93,13 @@ Les deux commandes doivent répondre avec un numéro de version.
 ### 3. Installer Python 3.10+
 
 **macOS** (via Homebrew, recommandé) :
+
 ```bash
 brew install python@3.12
 ```
 
 **Vérifie** :
+
 ```bash
 python3 --version
 ```
@@ -105,16 +109,19 @@ python3 --version
 Ollama fait tourner des LLMs open-source en local. Aucun compte, aucune clé API.
 
 **macOS** :
+
 ```bash
 brew install ollama
 ```
 
 **Linux** :
+
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 
 **Lance Ollama en service système** (démarre automatiquement, survit au reboot) :
+
 ```bash
 brew services start ollama          # macOS
 # ou
@@ -122,11 +129,13 @@ sudo systemctl enable --now ollama   # Linux
 ```
 
 **Télécharge le modèle par défaut** (~4.7 Go, prends ~5 min selon ta connexion) :
+
 ```bash
 ollama pull qwen2.5:7b
 ```
 
 **Vérifie** :
+
 ```bash
 curl http://localhost:11434/api/tags
 ```
@@ -201,6 +210,7 @@ python mini_rag.py ingest path/to/document.pdf
 ```
 
 Sortie typique :
+
 ```
 → Ingestion de document.pdf
   87 chunks extraits
@@ -218,6 +228,7 @@ python mini_rag.py query "Ta question en langage naturel"
 ```
 
 Sortie typique :
+
 ```
 → Question : What is the attention mechanism?
   Provider : ollama (qwen2.5:7b)
@@ -304,16 +315,18 @@ GROQ_API_KEY=ton_token
 
 Chaque étape de l'implémentation est documentée en profondeur dans `theory/` :
 
-| Fichier | Sujet |
-|---|---|
-| `00_roadmap.md` | Plan général du projet, toutes phases |
-| `01-1_qdrant_vector_db.md` | Vector DBs, HNSW, quantization, multi-tenancy |
-| `01-2_embeddings.md` | Transformers, contrastive loss, MTEB, modèles français |
-| `01-3_chunking.md` | Stratégies de chunking, overlap, PDF tricky cases |
-| `01-4_qdrant_storage.md` | Payload indexing, snapshots, write-ahead log |
-| `01-5_retrieval.md` | MMR, rerankers, hybrid search BM25, HyDE, évaluation |
-| `01-6_llm_prompting.md` | Pipeline d'inférence, température, prompt engineering |
-| `01-7_assemblage_pipeline.md` | Patterns d'orchestration, CLI design |
+
+| Fichier                       | Sujet                                                  |
+| ----------------------------- | ------------------------------------------------------ |
+| `00_roadmap.md`               | Plan général du projet, toutes phases                  |
+| `01-1_qdrant_vector_db.md`    | Vector DBs, HNSW, quantization, multi-tenancy          |
+| `01-2_embeddings.md`          | Transformers, contrastive loss, MTEB, modèles français |
+| `01-3_chunking.md`            | Stratégies de chunking, overlap, PDF tricky cases      |
+| `01-4_qdrant_storage.md`      | Payload indexing, snapshots, write-ahead log           |
+| `01-5_retrieval.md`           | MMR, rerankers, hybrid search BM25, HyDE, évaluation   |
+| `01-6_llm_prompting.md`       | Pipeline d'inférence, température, prompt engineering  |
+| `01-7_assemblage_pipeline.md` | Patterns d'orchestration, CLI design                   |
+
 
 À lire en parallèle du code, dans l'ordre numérique.
 
@@ -324,6 +337,7 @@ Chaque étape de l'implémentation est documentée en profondeur dans `theory/` 
 ### `Connection refused: localhost:6333`
 
 Qdrant n'est pas démarré. Lance :
+
 ```bash
 docker compose up -d
 ```
@@ -331,6 +345,7 @@ docker compose up -d
 ### `Connection refused: localhost:11434`
 
 Ollama n'est pas démarré. Lance :
+
 ```bash
 brew services start ollama
 ```
@@ -338,6 +353,7 @@ brew services start ollama
 ### `model 'qwen2.5:7b' not found`
 
 Le modèle n'a pas été téléchargé. Lance :
+
 ```bash
 ollama pull qwen2.5:7b
 ```
@@ -357,6 +373,7 @@ Baisse `TEMPERATURE` à `0.1` ou `0` dans `ask_llm.py`. Renforce l'instruction d
 ### Latence LLM trop élevée (>15s)
 
 Normal sur CPU avec Qwen 7B. Options :
+
 - Passer à `qwen2.5:3b` (plus rapide, qualité moindre).
 - Activer MPS sur Apple Silicon : `device="mps"` dans `embed_text.py`.
 - Utiliser un provider distant rapide (Groq).
