@@ -145,7 +145,24 @@ curl http://localhost:6333/
 
 Doit répondre par un petit JSON contenant `"title":"qdrant"`. Tu peux aussi ouvrir [http://localhost:6333/dashboard](http://localhost:6333/dashboard) dans ton navigateur — c'est l'UI web de Qdrant.
 
----
+### 8. (Optionnel) OCR : Tesseract + Poppler
+
+Pour ingérer des PDF **scannés** ou **contenant des images avec du texte**, l'ingestion peut
+basculer sur l'OCR (cf. `theory/01-8`). Cela requiert deux binaires système :
+
+```bash
+brew install tesseract tesseract-lang poppler   # macOS
+# Linux : sudo apt install tesseract-ocr tesseract-ocr-fra poppler-utils
+```
+
+- **tesseract** : moteur OCR (`tesseract-lang` ajoute le français et les autres langues).
+- **poppler** : permet de rendre les pages PDF en images (`pdf2image`).
+
+Les paquets Python (`pytesseract`, `pdf2image`, `Pillow`) sont déjà dans `requirements.txt`.
+Sans ces binaires, l'app fonctionne quand même : l'OCR est simplement ignoré (avec un avertissement).
+
+Usage : `python mini_rag.py ingest fichier.pdf --ocr auto|always|never`
+(`auto` = OCR les pages sans texte ; `always` = OCR toutes les pages, utile pour un PDF mixte).
 
 ---
 

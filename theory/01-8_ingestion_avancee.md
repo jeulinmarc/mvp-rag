@@ -40,7 +40,7 @@ T̂ = E(f) ≈ T*(f)
 C'est une grille de lecture utile : l'extraction n'est pas neutre, elle **injecte du bruit** qui
 se propage ensuite dans l'espace d'embedding.
 
-### Le fallback OCR (ce que notre MVP n'a pas)
+### Le fallback OCR (✅ désormais implémenté dans le MVP)
 
 Heuristique de détection des PDF scannés : soit `T_0` le texte de la couche texte du PDF et
 `n_p` le nombre de pages. Si
@@ -59,8 +59,17 @@ T(f) = T_OCR(f)   si |T_0|/n_p < 20  et  |T_OCR| > |T_0|
 Chaîne technique : `pdf2image → pytesseract`. La branche OCR n'est invoquée **que si** le chemin
 pas cher échoue — ça préserve le débit d'ingestion sur un corpus bien formé.
 
-> Dans notre roadmap c'est l'étape **5.1** (extension de `core/document_loaders.py`). Le mémo
-> confirme le seuil exact (20 char/page) et l'ordre des opérations.
+> **Implémentation MVP (étape 5.1).** C'est désormais codé dans `src/load_pdf.py` (`_ocr_page` +
+> paramètre `ocr` de `load_pdf_pages`). Deux différences assumées avec le mémo :
+> 1. Le test caractères/page est appliqué **par page** (et non au niveau document), pour gérer les
+>    PDF **mixtes texte + images** : on n'OCR que les pages dont la couche texte est trop pauvre.
+> 2. Un mode `--ocr always` force l'OCR de toutes les pages (utile quand chaque page porte des
+>    images contenant du texte). `auto` (défaut) suit le seuil ; `never` désactive.
+>
+> Dépendances : `tesseract` + `poppler` (système, `brew` — voir `docs/INSTALL.md`) et
+> `pytesseract` + `pdf2image` (pip). Dégradation gracieuse si absent (OCR ignoré, le reste tourne).
+> Le reste de la Phase 5 (connecteurs, multi-user, etc.) **n'est volontairement pas fait dans le
+> MVP** : il vit dans le repo de production `merlin-intelligence/eigenmind`.
 
 ### Le format dispatch et ses limites
 
@@ -172,7 +181,7 @@ Question d'analyste : *« Où, dans le corpus existant, ce nouveau document se s
 | Brique | Notre MVP | Mémo officiel | Roadmap |
 |---|---|---|---|
 | Formats | PDF seul | PDF/DOCX/PPTX/XLSX/TXT/MD | 4.3 / 5 |
-| Scans | non gérés | OCR fallback (seuil 20 char/page) | 5.1 |
+| Scans / images | ✅ OCR par page (auto/always/never) | OCR fallback (seuil 20 char/page) | 5.1 ✅ |
 | Chunking | splitter récursif | + ChunkNorris (markdown-aware) | 4.3 |
 | Device | `cpu` en dur | `cuda > mps > cpu` auto | 5.6 |
 | Dédup | écrasement par ID | `existing_filenames` au niveau fichier | 5.5 |

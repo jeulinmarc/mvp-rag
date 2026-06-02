@@ -81,20 +81,19 @@ But : ranger le code MVP dans l'arborescence du package `eigenmind/`.
 - [ ] **4.8** Scripts & tests — `scripts/ingest_recursive.py`, `tests/unit/`
   *Théorie : tests purs numpy, déterminisme, fixtures*
 
-## Phase 5 — Connecteurs et features avancées (dossier `final/`) ⬜
+## Phase 5 — Features avancées
 
-- [ ] **5.1** OCR — extension de `core/document_loaders.py`
-  *Théorie : pytesseract, quand basculer sur OCR*
-- [ ] **5.2** Google Drive connector — `connectors/google_drive.py`
-  *Théorie : OAuth 2.0 user flow vs service account, scopes*
-- [ ] **5.3** SharePoint connector — `connectors/sharepoint.py`
-  *Théorie : Microsoft Graph API, Azure AD app registration*
-- [ ] **5.4** Multi-user auth — `ui/auth.py`, `user_data/users.json`
-  *Théorie : password hashing (bcrypt/argon2), isolation par user*
-- [ ] **5.5** Smart Resume — extension de `pipelines/ingest.py`
-  *Théorie : idempotence pipeline, filtres Qdrant sur payload*
-- [ ] **5.6** Polish performance — lazy loading, GC, CPU-only torch
-  *Théorie : profil mémoire Transformer, lazy init*
+> **Décision (juin 2026)** : seul l'**OCR** est ajouté au MVP (vrai besoin, auto-contenu). Le reste
+> (connecteurs Drive/SharePoint, multi-user, Smart Resume, perf) **n'est pas fait dans `mvp-rag`** :
+> ces features existent déjà dans le repo de production `merlin-intelligence/eigenmind`.
+
+- [x] **5.1** OCR — `src/load_pdf.py` (`_ocr_page`, param `ocr=auto|always|never`)
+  *Théorie : canal bruité, seuil caractères/page **par page** (PDF mixtes), `pdf2image`→`pytesseract`. Cf. `01-8`.*
+- [ ] ~~**5.2** Google Drive connector~~ — non fait dans le MVP (repo de prod)
+- [ ] ~~**5.3** SharePoint connector~~ — non fait dans le MVP (repo de prod)
+- [ ] ~~**5.4** Multi-user auth~~ — non fait dans le MVP (repo de prod)
+- [ ] ~~**5.5** Smart Resume~~ — non fait dans le MVP (repo de prod)
+- [ ] ~~**5.6** Polish performance~~ — non fait dans le MVP (repo de prod)
 
 ---
 

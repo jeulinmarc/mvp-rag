@@ -23,16 +23,16 @@ from retrieve import retrieve, TOP_K
 from ask_llm import ask, PROVIDER, PROVIDER_CONFIG
 
 
-def cmd_ingest(pdf_path: str) -> int:
+def cmd_ingest(pdf_path: str, ocr: str = "auto") -> int:
     """Load + chunk + embed + store. Return number of points written."""
     if not Path(pdf_path).exists():
         print(f"Erreur : fichier non trouvé : {pdf_path}")
         return 1
 
-    print(f"→ Ingestion de {pdf_path}")
+    print(f"→ Ingestion de {pdf_path} (ocr={ocr})")
     t0 = time.time()
 
-    chunks = load_and_chunk(pdf_path)
+    chunks = load_and_chunk(pdf_path, ocr=ocr)
     print(f"  {len(chunks)} chunks extraits")
 
     if not chunks:
@@ -210,9 +210,9 @@ def _cmd_compare(question: str, k: int, show_sources: bool) -> int:
     return 0
 
 
-def cmd_ask(pdf_path: str, question: str, k: int = TOP_K, mode: str = "hybrid") -> int:
+def cmd_ask(pdf_path: str, question: str, k: int = TOP_K, mode: str = "hybrid", ocr: str = "auto") -> int:
     """Ingest then query in one shot."""
-    rc = cmd_ingest(pdf_path)
+    rc = cmd_ingest(pdf_path, ocr=ocr)
     if rc != 0:
         return rc
     print()
@@ -227,6 +227,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_ingest = sub.add_parser("ingest", help="Ingérer un PDF dans la collection.")
     p_ingest.add_argument("pdf_path", help="Chemin vers le fichier PDF.")
+    p_ingest.add_argument(
+        "--ocr", choices=["auto", "always", "never"], default="auto",
+        help="auto = OCR les pages sans texte (défaut) · always = OCR toutes les pages "
+             "(PDF mixte texte+images) · never = couche texte seule.",
+    )
 
     p_query = sub.add_parser("query", help="Poser une question sur la collection.")
     p_query.add_argument("question", help="Question en langage naturel.")
@@ -245,6 +250,10 @@ def build_parser() -> argparse.ArgumentParser:
         "-m", "--mode", choices=["dense", "hybrid", "compare"], default="hybrid",
         help="dense · hybrid (défaut) · compare.",
     )
+    p_ask.add_argument(
+        "--ocr", choices=["auto", "always", "never"], default="auto",
+        help="auto (défaut) · always · never.",
+    )
 
     return parser
 
@@ -254,11 +263,11 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.cmd == "ingest":
-        return cmd_ingest(args.pdf_path)
+        return cmd_ingest(args.pdf_path, ocr=args.ocr)
     if args.cmd == "query":
         return cmd_query(args.question, k=args.top_k, mode=args.mode, show_sources=not args.no_sources)
     if args.cmd == "ask":
-        return cmd_ask(args.pdf_path, args.question, k=args.top_k, mode=args.mode)
+        return cmd_ask(args.pdf_path, args.question, k=args.top_k, mode=args.mode, ocr=args.ocr)
 
     parser.print_help()
     return 1
