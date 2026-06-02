@@ -31,12 +31,7 @@ PAGES_DIR = MVP_DIR / "pages"
 # ---------------------------------------------------------------------------
 
 CHAPTERS: list[dict] = [
-    {
-        "title": "0. Roadmap",
-        "md": "00_roadmap.md",
-        "code": [],
-    },
-    # Phase 1 — RAG end-to-end
+    # Pipeline RAG
     {
         "title": "1.1 — Qdrant (vector DB)",
         "md": "01-1_qdrant_vector_db.md",
@@ -77,7 +72,7 @@ CHAPTERS: list[dict] = [
         "md": "01-8_ingestion_avancee.md",
         "code": ["load_pdf.py", "embed_text.py", "store_chunks.py"],
     },
-    # Phase 2 — Spectral graph layer
+    # Couche graphe spectrale
     {
         "title": "2.1 — Graphe de similarité",
         "md": "02-1_similarity_graph.md",
@@ -113,7 +108,7 @@ CHAPTERS: list[dict] = [
         "md": "02-7_epistemologie_et_validation.md",
         "code": [],
     },
-    # Phase 3 — Streamlit UI
+    # Interface Streamlit
     {
         "title": "3.1 — Streamlit fundamentals",
         "md": "03-1_streamlit_fundamentals.md",
@@ -201,7 +196,7 @@ def render_theory_pane(md_rel: str) -> None:
 
 def render_code_pane(code_paths: list[str]) -> None:
     if not code_paths:
-        st.info("Pas de code associé à ce chapitre (intro / roadmap).")
+        st.info("Pas de code associé à ce chapitre.")
         return
 
     # If several files, show one tab per file

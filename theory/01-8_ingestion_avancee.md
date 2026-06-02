@@ -176,15 +176,15 @@ du *stockage de fichiers*, c'est une **admission dans une variété sémantique 
 
 Question d'analyste : *« Où, dans le corpus existant, ce nouveau document se situe-t-il ? »*
 
-## Récap des écarts MVP ↔ officiel (phase 1)
+## Récap des écarts MVP ↔ officiel (ingestion)
 
-| Brique | Notre MVP | Mémo officiel | Roadmap |
-|---|---|---|---|
-| Formats | PDF seul | PDF/DOCX/PPTX/XLSX/TXT/MD | 4.3 / 5 |
-| Scans / images | ✅ OCR par page (auto/always/never) | OCR fallback (seuil 20 char/page) | 5.1 ✅ |
-| Chunking | splitter récursif | + ChunkNorris (markdown-aware) | 4.3 |
-| Device | `cpu` en dur | `cuda > mps > cpu` auto | 5.6 |
-| Dédup | écrasement par ID | `existing_filenames` au niveau fichier | 5.5 |
+| Brique | Notre MVP | Mémo officiel |
+|---|---|---|
+| Formats | PDF seul | PDF/DOCX/PPTX/XLSX/TXT/MD |
+| Scans / images | ✅ OCR par page (auto/always/never) | OCR fallback (seuil 20 char/page) |
+| Chunking | splitter récursif | + ChunkNorris (markdown-aware) |
+| Device | `cpu` en dur | `cuda > mps > cpu` auto |
+| Dédup | écrasement par ID | `existing_filenames` au niveau fichier |
 
-Aucun de ces écarts n'est un bug : ce sont des choix de simplification pédagogique. On les
-comblera en adoptant la structure du repo officiel (phases 4-5).
+Aucun de ces écarts n'est un bug : ce sont des choix de simplification pédagogique. Le reste
+(formats supplémentaires, packaging…) vit dans le repo de production `merlin-intelligence/eigenmind`.

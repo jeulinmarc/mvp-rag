@@ -203,7 +203,6 @@ Chaque étape de l'implémentation est documentée en profondeur dans `theory/` 
 
 | Fichier                       | Sujet                                                  |
 | ----------------------------- | ------------------------------------------------------ |
-| `00_roadmap.md`               | Plan général du projet, vue d'ensemble                 |
 | `01-1_qdrant_vector_db.md`    | Vector DBs, HNSW, quantization, multi-tenancy          |
 | `01-2_embeddings.md`          | Transformers, contrastive loss, MTEB, modèles français |
 | `01-3_chunking.md`            | Stratégies de chunking, overlap, PDF tricky cases      |
