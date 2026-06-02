@@ -4,17 +4,17 @@ Reimplémentation pédagogique du projet [merlin-intelligence/eigenmind](https:/
 
 L'objectif de ce repo n'est pas de fournir un produit utilisable, mais de **comprendre** comment fonctionne un RAG moderne en le recodant entièrement, brique par brique. Chaque étape s'accompagne d'un document théorique dans `theory/`.
 
-## État du projet
+## Fonctionnalités
 
-- ✅ **Phase 1** — MVP RAG end-to-end (CLI avec PDF + question → réponse citée)
-- ✅ **Phase 2** — Couche graphe spectrale (Singular / Hinge / Theta nodes), branchée dans le CLI et l'UI
-- ✅ **Phase 3** — Interface Streamlit multipage (5 pages validées end-to-end)
-- ⬜ Phase 4 — Refactor vers la structure du repo officiel (package `eigenmind/`)
-- ⬜ Phase 5 — Connecteurs (Google Drive, SharePoint), OCR, multi-user
+- **Ingestion de PDF** : extraction (OCR optionnel pour les scans / images), chunking, embeddings, stockage dans Qdrant.
+- **RAG** : question en langage naturel → passages pertinents → réponse citée par un LLM local.
+- **Couche graphe spectrale** : le corpus est analysé comme un graphe sémantique pour faire ressortir pôles thématiques, connecteurs et thèmes-frontière, et enrichir le retrieval.
+- **Interface web Streamlit** : ingestion, chat, explorateur de graphe, gestion de la collection, lecture théorie ↔ code.
+- **CLI** : `ingest` / `query` / `ask`, en retrieval dense, hybride, ou comparaison des deux.
 
-Détail dans `theory/00_roadmap.md`.
+Chaque brique est documentée dans `theory/`.
 
-## Architecture (état actuel — Phases 1 à 3)
+## Architecture
 
 ```
 mvp-rag/
@@ -25,7 +25,7 @@ mvp-rag/
 ├── qdrant_storage/             # Données Qdrant (gitignored, volume Docker)
 ├── venv/                       # Environnement Python (gitignored)
 ├── src/                        # Code source uniquement
-│   │   # Phase 1 — pipeline RAG
+│   │   # pipeline RAG (ingestion → retrieval → LLM)
 │   ├── embed_text.py           # Sentence embeddings (MiniLM)
 │   ├── load_pdf.py             # Extraction PDF + chunking
 │   ├── store_chunks.py         # Ingestion Qdrant
@@ -34,7 +34,7 @@ mvp-rag/
 │   ├── mini_rag.py             # Orchestrateur CLI (modes dense/hybrid/compare)
 │   ├── reset_qdrant.py         # Drop de la collection (clean slate)
 │   │
-│   │   # Phase 2 — couche graphe spectrale
+│   │   # couche graphe spectrale
 │   ├── build_graph.py          # Graphe de similarité k-NN
 │   ├── spectral.py             # Laplacien normalisé + décomposition propre
 │   ├── singular.py             # Nœuds Singular (modes haute fréquence)
@@ -42,7 +42,7 @@ mvp-rag/
 │   ├── theta.py                # Nœuds Theta (sous-clusters thématiques)
 │   ├── hybrid_retrieve.py      # Fusion dense + signaux graphe (GraphAwareCache)
 │   │
-│   │   # Phase 3 — interface Streamlit multipage
+│   │   # interface Streamlit multipage
 │   ├── streamlit_app.py        # Entrée / accueil
 │   └── pages/
 │       ├── 1_Ingest.py         # Upload + ingestion PDF
@@ -203,7 +203,7 @@ Chaque étape de l'implémentation est documentée en profondeur dans `theory/` 
 
 | Fichier                       | Sujet                                                  |
 | ----------------------------- | ------------------------------------------------------ |
-| `00_roadmap.md`               | Plan général du projet, toutes phases                  |
+| `00_roadmap.md`               | Plan général du projet, vue d'ensemble                 |
 | `01-1_qdrant_vector_db.md`    | Vector DBs, HNSW, quantization, multi-tenancy          |
 | `01-2_embeddings.md`          | Transformers, contrastive loss, MTEB, modèles français |
 | `01-3_chunking.md`            | Stratégies de chunking, overlap, PDF tricky cases      |
