@@ -17,7 +17,7 @@ Chaque brique est documentée dans `theory/`.
 ## Architecture
 
 ```
-mvp-rag/
+mvp-graph-rag/
 ├── README.md                   # Ce fichier (à la racine)
 ├── docker-compose.yml          # Qdrant en local (infra → racine)
 ├── requirements.txt            # Dépendances Python (→ racine)
@@ -73,8 +73,8 @@ Tout est gratuit, tout tourne en local. Aucune carte bancaire requise.
 Prérequis : Docker, Python 3.10+, Ollama. Ensuite, depuis la racine du repo :
 
 ```bash
-git clone https://github.com/jeulinmarc/mvp-rag.git
-cd mvp-rag
+git clone https://github.com/jeulinmarc/mvp-graph-rag.git
+cd mvp-graph-rag
 
 python3 -m venv venv && source venv/bin/activate   # venv à la racine
 pip install -r requirements.txt

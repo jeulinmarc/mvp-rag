@@ -14,8 +14,8 @@ Pour l'usage courant, reviens au [README](../README.md).
 ### 1. Cloner le repo
 
 ```bash
-git clone https://github.com/jeulinmarc/mvp-rag.git
-cd mvp-rag
+git clone https://github.com/jeulinmarc/mvp-graph-rag.git
+cd mvp-graph-rag
 ```
 
 ### 2. Installer Docker Desktop
@@ -96,7 +96,7 @@ Doit retourner un JSON listant les modèles installés.
 
 ### 5. Setup Python et dépendances
 
-Le venv vit à la **racine du repo** (`mvp-rag/venv/`), pas dans `src/`. Depuis la racine `mvp-rag/` :
+Le venv vit à la **racine du repo** (`mvp-graph-rag/venv/`), pas dans `src/`. Depuis la racine `mvp-graph-rag/` :
 
 ```bash
 # Créer le venv (à la racine du repo)
