@@ -17,7 +17,9 @@ Détail dans `theory/00_roadmap.md`.
 ## Architecture (état actuel — Phases 1 à 3)
 
 ```
-eigenmind/
+mvp-rag/
+├── README.md                   # Ce fichier (à la racine)
+├── venv/                       # Environnement Python (gitignored, à la racine)
 ├── mvp/                        # MVP fonctionnel à plat
 │   ├── docker-compose.yml      # Qdrant en local
 │   ├── requirements.txt        # Dépendances Python
@@ -47,8 +49,7 @@ eigenmind/
 │       ├── 3_Graph_Explorer.py # Visualisation du graphe (Plotly)
 │       ├── 4_Manage.py         # Gestion de la collection
 │       └── 5_Theory.py         # Théorie ↔ code côte à côte
-├── theory/                     # Documents théoriques (01-* à 03-*)
-└── final/                      # Refactor à venir (Phase 4)
+└── theory/                     # Documents théoriques (01-* à 03-*) + mémo officiel (PDF)
 ```
 
 ## Stack technique
@@ -75,7 +76,7 @@ Tout est gratuit, tout tourne en local. Aucune carte bancaire requise.
 
 ```bash
 git clone https://github.com/jeulinmarc/mvp-rag.git
-cd mvp-rag/mvp
+cd mvp-rag
 ```
 
 ### 2. Installer Docker Desktop
@@ -156,20 +157,20 @@ Doit retourner un JSON listant les modèles installés.
 
 ### 5. Setup Python et dépendances
 
-Depuis `mvp/` :
+Le venv vit à la **racine du repo** (`mvp-rag/venv/`), pas dans `mvp/`. Depuis la racine `mvp-rag/` :
 
 ```bash
-# Créer le venv
+# Créer le venv (à la racine du repo)
 python3 -m venv venv
 
 # Activer le venv (à refaire à chaque session)
 source venv/bin/activate
 
 # Installer les dépendances
-pip install -r requirements.txt
+pip install -r mvp/requirements.txt
 ```
 
-Tu sauras que le venv est actif quand ton prompt commence par `(venv)`.
+Tu sauras que le venv est actif quand ton prompt commence par `(venv)`. L'activation est indépendante du dossier courant : une fois `(venv)` actif, tu peux `cd mvp/` pour lancer Qdrant et Streamlit.
 
 ### 6. Configurer les variables d'environnement
 
