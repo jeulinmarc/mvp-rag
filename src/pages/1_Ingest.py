@@ -42,6 +42,19 @@ def _save_to_temp(uploaded) -> Path:
 # ---------------------------------------------------------------------------
 
 if uploaded_file is not None:
+    ocr_mode = st.radio(
+        "OCR (texte dans les images / PDF scannés)",
+        options=["auto", "always", "never"],
+        index=0,
+        horizontal=True,
+        help=(
+            "**auto** : OCR uniquement les pages sans couche texte (scans). "
+            "**always** : OCR toutes les pages — pour un PDF mixte dont les images "
+            "contiennent du texte. **never** : couche texte seule (plus rapide). "
+            "Nécessite Tesseract + Poppler (voir docs/INSTALL.md)."
+        ),
+    )
+
     col1, col2 = st.columns([3, 1])
     with col1:
         st.success(f"Fichier reçu : **{uploaded_file.name}** "
@@ -59,19 +72,22 @@ if uploaded_file is not None:
             # Override the filename in chunks to keep the original name
             original_name = uploaded_file.name
 
-            # Step 2 — load and chunk
-            progress.progress(0.3, text="Extraction du texte et chunking...")
+            # Step 2 — load and chunk (avec OCR selon le mode choisi)
+            ocr_label = "OCR + " if ocr_mode != "never" else ""
+            progress.progress(0.3, text=f"Extraction du texte ({ocr_label}chunking)...")
             t0 = time.time()
-            chunks = load_and_chunk(tmp_path)
+            chunks = load_and_chunk(tmp_path, ocr=ocr_mode)
             for c in chunks:
                 c["filename"] = original_name  # override tmp name
             t_chunk = time.time() - t0
 
             if not chunks:
-                st.error(
-                    "Aucun texte extrait du PDF. Probablement un PDF scanné. "
-                    "L'OCR sera ajouté en phase 5."
+                hint = (
+                    " Réessaie avec **OCR = always** (PDF scanné ou texte dans des images)."
+                    if ocr_mode != "always"
+                    else " Vérifie que Tesseract + Poppler sont installés (voir docs/INSTALL.md)."
                 )
+                st.error("Aucun texte extrait du PDF." + hint)
                 st.stop()
 
             # Step 3 — embed + upsert
@@ -136,8 +152,10 @@ with st.expander("ℹ️ À savoir"):
   Les `chunk_id` sont des hash déterministes de (filename, page, chunk_index).
 - **Invalidation du graphe** : à chaque ingestion, le cache du graphe spectral est
   effacé. Il sera reconstruit à la prochaine requête sur la page Chat.
+- **OCR** : PDF scannés / images contenant du texte → choisis le mode OCR ci-dessus.
+  `auto` n'OCR que les pages sans texte ; `always` OCR toutes les pages (plus lent).
+  Nécessite Tesseract + Poppler (voir `docs/INSTALL.md`).
 - **Limites actuelles** :
-  - PDF scannés non supportés (OCR en phase 5).
-  - Pas de DOCX/XLSX/PPTX (extension à venir en phase 4).
+  - Pas de DOCX/XLSX/PPTX (présent uniquement dans le repo de prod).
   - Pas de limite de taille mais les très gros PDF (>1000 pages) peuvent ralentir.
     """)
