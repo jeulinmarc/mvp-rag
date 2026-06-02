@@ -1,135 +1,148 @@
-# 2.3 — Singular nodes : les chunks originaux
+# 2.3 — Singular nodes : les pôles thématiques (Thematic Diversity)
+
+> **Référence faisant foi.** Mémo officiel §4.2 (*Strategy 1 — Thematic Diversity*, module
+> `singular.py`). ⚠️ **Cette définition remplace la version précédente de ce document**, qui
+> décrivait les Singular comme des chunks « atypiques » détectés par les **hautes** fréquences
+> spectrales. Le mémo fait foi : les Singular sont en réalité les **extrema des modes basses
+> fréquences** — les pôles des axes thématiques. Voir la note d'implémentation en fin de doc.
 
 ## Qu'est-ce qu'un Singular node ?
 
-Intuitivement, c'est un chunk qui **ne ressemble à aucun autre** dans le corpus. Il porte une information ou une formulation qu'on ne retrouve nulle part ailleurs.
+Un Singular node n'est **pas** un chunk marginal. C'est un **représentant thématique** : l'un des
+deux pôles opposés d'un **axe de variation thématique** du corpus. Le module s'appelle
+`singular.py` parce qu'il travaille sur les valeurs *singulières* de la matrice d'embedding, mais
+sa classe sémantique officielle est **« Thematic Representatives »**.
 
-Exemples concrets :
+Question d'analyste associée : *« Quels sont les axes dominants de variation thématique dans ce
+corpus ? »*
 
-- Dans un rapport annuel : la section "événement exceptionnel" est typiquement Singular — tout le reste du doc parle de chiffres, RH, marché, mais cette section unique parle d'un litige juridique précis.
-- Dans une thèse : la définition originale proposée par l'auteur est Singular — c'est ce qui distingue cette thèse de la littérature.
-- Dans un corpus médical : le case report d'un patient rare est Singular — la majorité des chunks parlent de cas typiques.
+Exemples (corpus de stratégie financière, §4.2) :
 
-En graphe-speak : un Singular node a des **liens faibles avec tout le monde**. Il n'appartient à aucun cluster, il flotte un peu en marge.
+- Sur un corpus dé-dollarisation, les deux pôles d'un axe pourraient être : `i⁻` = une analyse
+  banque centrale sur la profondeur du marché des Treasuries US, et `i⁺` = un passage sur
+  l'infrastructure CBDC transfrontalière des BRICS.
+- Sur un corpus inflation, l'axe pourrait opposer fragmentation des chaînes
+  d'approvisionnement vs normalisation monétaire.
 
-## Pourquoi c'est précieux en RAG
+Les pôles sont les **archétypes** entre lesquels se déploie le corpus, pas des outliers.
 
-Un RAG top-k vectoriel classique retourne les k chunks les plus similaires à la question. Risque : les k chunks viennent tous du même cluster (ils se ressemblent entre eux, redondance), et l'info "rare" mais importante reste invisible.
+## La machinerie : décomposition spectrale du Laplacien normalisé
 
-Exemple :
+### 1. Laplacien normalisé
 
-> Question : "Quels sont les risques mentionnés dans le rapport ?"
-
-Sans Singular boost :
-- Top-5 retourne 5 chunks qui parlent tous des risques de marché (les plus fréquents dans le doc).
-- L'unique chunk qui parle du risque de litige juridique est en position 12. Jamais vu.
-
-Avec Singular boost :
-- On garde 3 chunks du top-5 classique.
-- On ajoute 2 chunks Singular pertinents pour la question.
-- Le chunk sur le litige juridique remonte et est inclus.
-- La réponse couvre l'ensemble du paysage de risques, pas juste le mainstream.
-
-C'est exactement ce que fait MMR aussi, mais le boost Singular est **précalculé globalement** sur tout le corpus, pas par requête. Plus efficace, plus stable.
-
-## Comment les identifier formellement
-
-Plusieurs critères, qu'on combine pour robustesse.
-
-### Critère 1 — Faible centralité
-
-Un Singular node a peu de connexions fortes. On mesure ça avec la **centralité de degré pondéré** (somme des poids des arêtes incidentes) :
+À partir de la matrice de similarité `W` (cf. `02-1`), on forme le **Laplacien normalisé** :
 
 ```
-centrality(i) = Σ_j w_{ij}
+L_sym = I − D^(−1/2) W D^(−1/2) ,    D = diag(d) ,    d_i = Σ_j W_ij
 ```
 
-Plus la centralité est basse, plus le nœud est isolé du reste.
+Les nœuds isolés (`d_i = 0`) reçoivent une entrée `D^(−1/2)` nulle.
 
-### Critère 2 — Faible similarité moyenne avec ses voisins
+### 2. Décomposition propre complète
 
-Variante affinée : on regarde uniquement les **top-k voisins** et on calcule leur similarité moyenne :
-
-```
-avg_top_k_sim(i) = (1/k) × Σ_{j ∈ top_k(i)} w_{ij}
-```
-
-Si même tes meilleurs voisins ne te ressemblent que faiblement (~0.4), tu es Singular. Si tes meilleurs voisins te ressemblent fortement (~0.9), tu es dans un cluster dense.
-
-### Critère 3 — Forte projection sur les hautes fréquences spectrales
-
-Le critère spectral, vraiment original. Souviens-toi de 2.2 :
-
-- Les **basses fréquences** (premiers vecteurs propres, λ petits) captent la structure globale, les clusters.
-- Les **hautes fréquences** (derniers vecteurs propres, λ grands) captent le détail local, les anomalies.
-
-Un nœud Singular **ne participe pas aux modes basse fréquence** (il n'appartient à aucun cluster) mais **émerge fortement dans les modes haute fréquence** (il a sa propre identité atypique).
-
-Formellement, on définit le **score spectral d'atypisme** :
+On calcule **tout** le spectre via un solveur symétrique (`np.linalg.eigh`, `O(n³)`, praticable
+pour `n ≲ 1000`) :
 
 ```
-singular_score(i) = Σ_{k=n-K+1}^{n} v_k[i]²
+0 = λ_0 ≤ λ_1 ≤ … ≤ λ_{n−1}   et leurs vecteurs propres u_0, u_1, …
 ```
 
-où `v_k` est le k-ième vecteur propre et on somme sur les K dernières valeurs propres (les plus grandes). Plus ce score est élevé, plus le nœud "résiste" à toute tentative de clustering — il a son propre comportement.
+### 3. Sélection des modes basses fréquences
 
-C'est une mesure profonde et plutôt rare. On la combinera avec les critères 1 et 2.
+Le code compte les valeurs propres quasi-nulles :
 
-### Critère 4 — Faible appartenance à un cluster
+```
+k = |{ j : λ_j < 10⁻³ }|
+```
 
-Si on a calculé un spectral clustering en k clusters (via les K premiers vecteurs propres + k-means), un Singular node est celui dont la **distance au centroid de son cluster** est maximale. Il est "membre par défaut" mais ne ressemble pas vraiment au reste.
+Formellement, la **multiplicité de `λ = 0` est le nombre de composantes connexes** de `W`. En
+pratique, les sous-graphes issus du BFS sont presque toujours connexes (`k = 1`) ; la structure
+thématique signifiante vit dans les **petites valeurs propres non nulles** et leurs **gaps
+spectraux**. On sélectionne donc les premiers vecteurs propres **basses fréquences** non triviaux
+(à partir du vecteur de Fiedler `u_1`).
 
-On ne l'utilisera pas en MVP (k-means est une dépendance en plus), mais à connaître.
+### 4. Extraction des pôles
 
-## Comment on combine les critères
+Pour chaque vecteur propre basse fréquence sélectionné `u_j` (`j = 1, …, k`) :
 
-Chaque critère donne un score continu. Pour identifier les Singular nodes :
+```
+i⁺_j = argmax_i u_j(i)        i⁻_j = argmin_i u_j(i)
+```
 
-1. Calculer les 3 critères (centralité, sim moyenne aux voisins, score spectral) pour chaque nœud.
-2. Normaliser chaque score (z-score ou min-max scaling) pour les rendre comparables.
-3. Combiner via somme pondérée ou rang composite.
-4. Trier et garder le top-N.
+La paire `{i⁺_j, i⁻_j}` constitue les **Thematic Representatives du mode j** — les nœuds les plus
+éloignés le long de l'axe de variation `j`. Ce sont les **Singular nodes**.
 
-Eigenmind utilise typiquement les 10-20% du corpus comme "Singular set" — ni trop (alors c'est plus du Singular), ni trop peu (manque de diversité).
+## Le fondement mathématique : Fiedler, énergie de Dirichlet, Cheeger
 
-## Pondération des critères
+### Le vecteur de Fiedler minimise une énergie de Dirichlet normalisée
 
-Choix par défaut basé sur l'expérience :
+Pour `L_sym`, les vecteurs propres basse fréquence minimisent l'**énergie de Dirichlet
+normalisée** :
 
-| Critère | Poids |
-|---|---|
-| Score spectral (haute fréquence) | 0.5 |
-| 1 − centralité normalisée | 0.3 |
-| 1 − sim moyenne voisins | 0.2 |
+```
+E(u) = (uᵀ L_sym u) / ‖u‖²₂ = [ Σ_{i,j} W_ij (u_i − u_j)² / √(d_i d_j) ] / Σ_i u_i²
+```
 
-Pourquoi cette pondération : le score spectral est le plus "intelligent" (il capte vraiment l'atypisme global). Les autres sont des proxies plus directs mais moins fins.
+Ils encodent les fonctions qui **varient le plus lentement** sur le graphe pondéré par les degrés.
+Le premier minimiseur non trivial `u_1` (vecteur de Fiedler) a ses **extrema aux antipodes
+spectraux** — les deux nœuds les plus séparés le long de l'axe dominant de variation thématique.
+C'est exactement `{i⁺_1, i⁻_1}`.
 
-## Le piège : Singular ≠ outlier de bruit
+### Théorème formel : inégalité de Cheeger
 
-Attention : un chunk Singular n'est pas un chunk **mauvais**. Si tu as un chunk avec du texte parasite (header de page, footer, char Unicode bizarre), il sera mécaniquement Singular parce qu'il ne ressemble à rien de propre. Mais ce n'est pas un chunk précieux — c'est du bruit.
+L'inégalité de Cheeger (Chung, *Spectral Graph Theory*) relie la première valeur propre non
+triviale à la **constante isopérimétrique** (conductance) `h(G)` du graphe :
 
-Mitigations :
+```
+λ_1 / 2  ≤  h(G)  ≤  √(2 λ_1) ,    h(G) = min_S  cut(S, S̄) / min(vol(S), vol(S̄))
+```
 
-- **Nettoyer le texte** en amont : enlever les en-têtes répétés, normaliser l'Unicode.
-- **Filtrer par longueur** : un chunk Singular très court (< 100 chars) est probablement un artefact.
-- **Sanity check humain** : afficher les 5 chunks les plus Singular et vérifier qu'ils ont du sens. Si tu vois "Page 12 — Confidentiel", tu sais qu'il faut nettoyer en amont.
+Conséquence : une **petite** `λ_1` signale une coupe faiblement connectée — une séparation
+thématique métastable — **pas** une structure bipartie. (La structure bipartie correspond aux
+valeurs propres proches de **2** dans le spectre du Laplacien normalisé.) Un gap prononcé entre
+`λ_j` et `λ_{j+1}` signale une partition thématique naturelle en `j` parties.
 
-On garde simple en MVP : on filtre uniquement par longueur minimale.
+> C'est un vrai **théorème** (niveau de preuve le plus fort, cf. `02-7`). En revanche,
+> l'interprétation « ces nœuds sont des thèmes représentatifs » est une **interprétation
+> sémantique** : sélectionner les extrema d'un vecteur propre identifie des **antipodes
+> spectraux**, pas des « thèmes représentatifs » au sens formel. Que ces nœuds soient
+> sémantiquement représentatifs dépend de la qualité de l'embedding et doit être validé par des
+> experts du domaine (précision importante du mémo, §4.2).
 
-## Utilisation downstream
+## Interprétation sémantique
 
-Les Singular nodes seront exploités en 2.6 (Hybrid Retrieval) de deux façons :
+> *(Heuristique)* Les Thematic Representatives **ancrent les axes de la diversité thématique.**
 
-1. **Boost à la requête** — quand on récupère le top-k Qdrant, on regarde si des Singular nodes pertinents (cos avec la question > seuil) existent en dehors du top-k. On les ajoute.
+Visuellement, les pôles `i⁻` et `i⁺` se situent aux deux bouts de l'axe `u_1`, chacun entouré de
+son propre voisinage de chunks similaires. Ils donnent à l'analyste les **deux extrémités** du
+spectre de discours du corpus.
 
-2. **Diversification automatique** — on remplace les chunks redondants du top-k par des chunks Singular pertinents. C'est notre version Eigenmind du MMR.
+L'implication stratégique est directe : la qualité de l'output analytique est **majorée par la
+fidélité** avec laquelle l'encodeur aligne la sémantique textuelle sur la géométrie angulaire.
+Choisir l'encodeur est donc une décision éditoriale, pas technique.
 
-En phase 3 (Streamlit), on les afficher avec une couleur spéciale dans le Graph Explorer pour les rendre visuellement repérables.
+## Coût et limites
 
-## Cas extrêmes
+- **Coût** : décomposition propre complète `O(n³)`, praticable `n ≲ 1000`. Au-delà, solveurs
+  partiels (Lanczos/ARPACK via `scipy.sparse.linalg.eigsh`).
+- **Signe des vecteurs propres** : `u_j` est défini au signe près. L'échange `i⁺ ↔ i⁻` entre deux
+  runs est sans conséquence (l'axe est le même), mais à savoir pour les tests.
+- **Mode de défaillance** : *embedding collapse* — un encodeur hors-domaine mappe des chunks
+  distincts sur des vecteurs proches, ce qui dégrade tous les modes et donc les pôles.
 
-- **Corpus trop petit** (n < 20) : les Singular nodes n'ont pas beaucoup de sens, le concept de "majorité du corpus" est mal défini. On les calcule quand même mais avec une remise en contexte.
-- **Corpus très homogène** (tous les chunks parlent de la même chose) : aucun nœud n'est vraiment Singular. Le score d'atypisme est faible partout. C'est normal et informatif — ton corpus n'a pas de diversité interne.
-- **Corpus très diversifié** (multi-sujets sans lien) : presque tout est Singular. Là le concept perd son sens — il faut clusteriser d'abord, puis chercher des Singular **dans chaque cluster**.
+## ⚠️ Note d'implémentation MVP
 
-Pour Eigenmind, on assume un corpus thématiquement cohérent avec quelques zones atypiques. C'est le cas le plus courant.
+Notre `singular.py` calcule un **score d'atypisme hautes fréquences**
+`singular_score(i) = Σ_{k=n−K+1}^{n} v_k[i]²` (chunks « qui ne ressemblent à rien »). **C'est
+l'inverse spectral de la définition officielle**, qui utilise les **basses** fréquences et prend
+les **extrema** des vecteurs propres comme pôles thématiques.
+
+| | Notre `singular.py` | Mémo officiel |
+|---|---|---|
+| Bande spectrale | hautes fréquences (`λ` grands) | **basses** fréquences (Fiedler & co.) |
+| Critère | forte énergie `Σ v_k²` | **extrema** `argmax`/`argmin u_j` |
+| Sémantique | outlier atypique | **pôle d'un axe thématique** |
+
+Les deux sont défendables, mais **le mémo fait foi**. À l'adoption du repo complet, `singular.py`
+devra extraire les antipodes basses fréquences. La cible conceptuelle est *« axes de variation
+thématique »*, pas *« chunks isolés »*.

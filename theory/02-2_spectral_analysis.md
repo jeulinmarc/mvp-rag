@@ -116,7 +116,21 @@ nœud i va dans cluster B  si v_2[i] < 0
 
 C'est ce qu'on appelle le **spectral clustering bipartite**. Sans aucune supervision, sans k-means, sans seuil arbitraire, le simple signe du Fiedler vector révèle la coupure thématique la plus "naturelle" du corpus.
 
-**Plus une composante v_2[i] est grande en valeur absolue, plus le nœud i est "central" dans son cluster.** Plus elle est proche de 0, plus le nœud est sur la frontière entre les deux clusters — c'est exactement ce qu'on appellera un **Hinge node** en 2.4.
+**Plus une composante v_2[i] est grande en valeur absolue, plus le nœud i est "central" dans son cluster.** Les deux **extrema** de v_2 (le max et le min) sont les **antipodes spectraux** — les deux nœuds les plus séparés le long de l'axe thématique dominant. Ce sont, dans le mémo officiel, les **Singular nodes** (pôles thématiques, cf. 2.3).
+
+> ⚠️ Attention : dans une version antérieure de ces docs, on associait la **frontière** de v_2 (composantes ≈ 0) aux Hinge nodes. Le mémo officiel définit en réalité les Hinge par un **champ géodésique** (cf. 2.4), pas par le vecteur de Fiedler. Le Fiedler sert surtout aux **Singular** (ses extrema).
+
+### L'inégalité de Cheeger — le théorème qui ancre λ_2
+
+λ_2 n'est pas qu'un diagnostic intuitif : il est **formellement** relié à la "coupabilité" du graphe par l'**inégalité de Cheeger** (Chung, *Spectral Graph Theory*). En notant `h(G)` la constante isopérimétrique (conductance) du graphe :
+
+```
+λ_2 / 2  ≤  h(G)  ≤  √(2 λ_2) ,    h(G) = min_S  cut(S, S̄) / min(vol(S), vol(S̄))
+```
+
+- Une **petite** λ_2 garantit l'existence d'une coupe peu coûteuse → séparation thématique métastable.
+- C'est un vrai **théorème** (avec preuve), à distinguer des interprétations sémantiques heuristiques (cf. 2.7).
+- **Subtilité** : une petite λ_2 ne signifie **pas** une structure bipartie. La bipartité se lit à l'autre bout du spectre du Laplacien **normalisé** : des valeurs propres proches de **2**.
 
 ### λ_3, λ_4, ... — raffinements successifs
 
@@ -130,7 +144,9 @@ C'est l'algorithme de **Ng-Jordan-Weiss** (2001), l'un des spectral clustering l
 
 ### Les dernières valeurs propres — le **bruit**
 
-Les modes propres de haute fréquence (λ_n, λ_{n−1}, ...) correspondent à des oscillations très rapides sur le graphe. Ils captent les détails locaux et les anomalies — typiquement les **nœuds atypiques** qui ne ressemblent à aucun cluster. C'est ce qui inspirera les **Singular nodes** en 2.3.
+Les modes propres de haute fréquence (λ_n, λ_{n−1}, ...) correspondent à des oscillations très rapides sur le graphe. Ils captent les détails locaux et les anomalies.
+
+> ⚠️ Une version antérieure de ces docs en faisait la base des **Singular nodes**. C'est une **erreur** corrigée : le mémo officiel définit les Singular par les modes **basses** fréquences (les extrema du vecteur de Fiedler et des modes suivants), **pas** par les hautes fréquences. Les hautes fréquences restent surtout du détail/bruit (et la bande proche de λ=2 signale la bipartité).
 
 ## Décodage : que représentent les vecteurs propres ?
 
@@ -214,13 +230,12 @@ Comme notre k-NN graph avec k=10 produit en général un graphe connexe, on assu
 
 Les éléments qu'on va exploiter dans les étapes 2.3 à 2.6 :
 
-| Élément | Ce qu'il code | Utilisation Eigenmind |
+| Élément | Ce qu'il code | Utilisation Eigenmind (mémo officiel) |
 |---|---|---|
-| λ_2 | Connectivité algébrique | Diagnostic du corpus (homogène vs clusterisé) |
-| v_2 (Fiedler) | Coupure bipartite | Visualisation, identifier les Hinge nodes |
-| Petites composantes de v_k pour k bas | Centralité spectrale | Identifier les nœuds très centraux |
-| Grandes composantes de v_k pour k haut | Atypisme spectral | Identifier les **Singular nodes** (2.3) |
-| Composantes proches de zéro sur v_2 à v_k | Frontière inter-cluster | Identifier les **Hinge nodes** (2.4) |
-| Modes propres intermédiaires | Multi-clustering | Identifier les **Theta nodes** (2.5) |
+| λ_2 (Fiedler) + Cheeger | Connectivité algébrique, conductance | Diagnostic du corpus ; ancre les axes thématiques |
+| **Extrema** des modes basses fréquences (v_2, v_3, …) | Antipodes spectraux | Identifier les **Singular nodes** = pôles thématiques (2.3) |
+| Champ géodésique sur −log W (pas le spectre) | Relief de log-similarité | Identifier les **Hinge nodes** = connecteurs (2.4) |
+| Relaxation SDP de Lovász-θ sur H = 1[W≥τ] | Code non-confusable | Identifier les **Theta nodes** = info unique (2.5) |
+| Valeurs propres proches de 2 | Bipartité | Diagnostic structurel |
 
-Tout est dans la décomposition. Le reste, c'est de l'interprétation.
+⚠️ **Important** : seuls les **Singular** dérivent directement de la décomposition spectrale (modes basses fréquences). Les **Hinge** reposent sur des **géodésiques** (2.4) et les **Theta** sur une **relaxation SDP** (2.5) — pas sur les modes propres. Le mémo (`260522_Eigenmind_Cognitive_Maps.pdf`) fait foi.

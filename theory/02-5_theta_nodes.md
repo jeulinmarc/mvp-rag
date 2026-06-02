@@ -1,110 +1,148 @@
-# 2.5 — Theta nodes : extraction par modes propres intermédiaires
+# 2.5 — Theta nodes : les thèmes-frontière (relaxation de Lovász-θ)
 
-## Préambule honnête
+> **Référence faisant foi.** Mémo officiel §4.4 (*Strategy 3 — Frontier Themes*, module
+> `theta.py`). ⚠️ **Cette définition remplace la version précédente**, qui présentait les Theta
+> comme une « appellation maison » basée sur les **modes propres intermédiaires**. C'était faux :
+> le « θ » de Theta renvoie au **nombre de Lovász `ϑ(H)`**, et la stratégie est une **relaxation
+> SDP** de ce nombre. C'est l'écart le plus important entre notre MVP et le mémo. Note
+> d'implémentation en fin de doc.
 
-La notion de "Theta node" est **spécifique à Eigenmind**. Elle n'a pas de définition standard dans la théorie des graphes — c'est une appellation maison qui rassemble une idée précise : utiliser les **modes propres intermédiaires** du Laplacien pour identifier des chunks qui ne sont ni Singular (marges spectrales hautes) ni Hinge (frontière Fiedler), mais portent des **sous-structures locales** intéressantes.
+## Qu'est-ce qu'un Theta node ?
 
-Concrètement, on va définir une heuristique qui s'inspire de la décomposition spectrale au-delà du Fiedler vector pour repérer des chunks "représentants" de sous-clusters.
+Un Theta node est un **thème-frontière** : un chunk qui porte de l'information **unique,
+non-redondante** par rapport au reste du corpus. Là où Singular donne les axes et Hinge les ponts,
+Theta révèle les **signaux faibles et angles morts** — ce dont parle un seul passage, sans écho.
 
-## L'intuition
+Question d'analyste : *« Quels chunks portent une information unique, non-redondante ? »*
 
-Souviens-toi du paysage spectral (vu en 2.2) :
+Exemples (§4.4) : dans un corpus Moyen-Orient, des passages sur la **diplomatie de l'eau** ou les
+**implications du shipping arctique** — présents mais non amplifiés par le discours dominant. En
+macro globale : la **rareté du collatéral** ou la **réallocation des fonds de pension**.
 
-| Bande spectrale | Vecteurs propres | Capture |
+## L'idée centrale : indépendance = non-confusabilité
+
+Deux chunks directement reliés dans `W` sont **informationnellement redondants**. Trouver un
+ensemble de chunks porteurs d'info unique revient à chercher un **grand ensemble indépendant**
+dans un graphe d'interdépendance — un problème NP-difficile qu'on **relâche** via le nombre de
+Lovász `ϑ`.
+
+### 1. Graphe d'interdépendance
+
+```
+H_ij = 1[W_ij ≥ τ]        H_ii = 0
+```
+
+On réutilise **le même seuil `τ`** que le graphe de similarité (cf. `02-1`). Une arête de `H`
+signifie : « ces deux chunks sont si proches qu'ils sont mutuellement redondants. »
+
+### 2. Le nombre de Lovász `ϑ(H)` et le sandwich
+
+Le **problème primal** est le nombre d'indépendance :
+
+```
+α(H) = max_{x ∈ {0,1}^n} { 1ᵀx  :  x_i x_j = 0  ∀ (i,j) ∈ E(H) }
+```
+
+Le **nombre de Lovász** `ϑ(H)` est une relaxation SDP qui l'encadre par le **théorème sandwich de
+Lovász** :
+
+```
+α(H)  ≤  ϑ(H)  ≤  χ(H̄)
+```
+
+(`H̄` = graphe complémentaire, `χ` = nombre chromatique). `ϑ(H)` est calculable en temps polynomial
+(SDP), contrairement à `α` et `χ`.
+
+### 3. La relaxation lagrangienne (Lemaréchal–Oustry)
+
+Le mémo implémente une **relaxation lagrangienne / SDP** du primal (référence Lemaréchal–Oustry,
+2001). Le lagrangien introduit des multiplicateurs `λ` (contraintes binaires `x_i − x_i² = 0`) et
+`μ` (contraintes d'indépendance `x_i x_j = 0`) :
+
+```
+L(x, λ, μ) = 1ᵀx + Σ_i λ_i (x_i − x_i²) − ½ Σ_{(i,j) ∈ E(H)} μ_ij x_i x_j
+           = (1 + λ)ᵀx − xᵀ A(λ, μ) x
+```
+
+La fonction duale `g(λ, μ) = ¼ (1+λ)ᵀ A⁻¹ (1+λ)` est **convexe** ; sa minimisation donne
+`min g = ϑ(H) ≥ α(H)`.
+
+### 4. Le schéma sous-gradient
+
+Comme la SDP exacte est coûteuse, on minimise `g` par **sous-gradient projeté** :
+
+```
+A^(k) = diag(λ^(k)) + ¼ (μ^(k) + μ^(k)ᵀ) ⊙ H
+x^(k) = ½ (A^(k))⁻¹ (1 + λ^(k))
+
+∇_λ g = x^(k) − (x^(k))°²                    # descente libre sur λ
+∇_μ g = −½ x^(k) (x^(k))ᵀ ⊙ H               # descente projetée (μ ≥ 0) sur μ
+```
+
+(`⊙` = produit de Hadamard, `°²` = carré élément par élément.) Le pas `t_k = t_0 / √k` est la
+**règle de pas décroissant** de Polyak. On retient la meilleure borne duale `θ*`.
+
+> **Statut honnête (§4.4).** Le schéma sous-gradient **n'offre aucun certificat de convergence en
+> nombre fini d'itérations**. Les scores produits sont des **proxies `ϑ`-inspirés**, pas des
+> optima SDP exacts. Une validation contre un solveur exact sur petits corpus est recommandée.
+
+### 5. Matrice frontière et scores
+
+À partir de l'optimum approché `A*` :
+
+```
+F = (A*)⁻¹ / tr[(A*)⁻¹]  ⪰ 0           F ≈ Y Yᵀ
+FS(i) = F_ii = ‖y_i‖²                   # score frontière du chunk i
+```
+
+`F_ij ≈ 0` pour les paires interdépendantes ; `FS(i) = ‖y_i‖²` mesure le **proxy d'information
+indépendante** du chunk `i`. Les Theta nodes sont ceux de **score frontière élevé**.
+
+### 6. Sélection par point le plus éloigné (farthest-point)
+
+Pour garantir la **diversité** des Theta retenus :
+
+```
+ŷ_i = y_i / ‖y_i‖                                  # normalisation
+seed = chunk de plus fort SVD leverage
+i^(t+1) = argmax_i  min_{j ∈ S^(t)} (1 − ŷ_iᵀ ŷ_j)   # le plus loin du déjà-choisi
+```
+
+On ajoute itérativement le chunk le plus éloigné (au sens cosinus) de l'ensemble déjà sélectionné.
+
+## L'analogie de Shannon (capacité de canal)
+
+Lovász a introduit `ϑ` pour borner la **capacité d'erreur-zéro** d'un canal `C(G) = sup_k
+ϑ(G^⊠k)^{1/k}` (produit fort `⊠`). Sous cette analogie : les chunks interdépendants (`H_ij = 1`)
+sont des **« symboles confusables »**, et les thèmes-frontière correspondent à un **code
+non-confusable de capacité maximale** du corpus — l'ensemble de chunks qu'on peut « émettre » sans
+ambiguïté sémantique mutuelle. (Analogie, non équivalence formelle : requiert que `τ` modélise
+correctement la structure du canal.)
+
+## Interprétation sémantique
+
+> *(Heuristique)* Les thèmes-frontière sont des **signaux faibles et angles morts plausibles.**
+
+Concrètement, quand l'utilisateur pose une question exploratoire (« qu'est-ce que je rate ? »),
+injecter des Theta dans le contexte force le LLM à couvrir l'information unique du corpus, pas
+seulement le discours dominant.
+
+## ⚠️ Note d'implémentation MVP
+
+Notre `theta.py` calcule `theta_score(i) = max_{k=3..K} |v_k[i]|` sur les **modes propres
+intermédiaires** du Laplacien, avec sélection par extrêmes de mode. Notre doc précédent admettait
+même qu'il s'agissait d'une « appellation maison sans définition standard » — **c'est faux** : le
+mémo donne une définition précise (relaxation de Lovász-θ).
+
+| | Notre `theta.py` | Mémo officiel |
 |---|---|---|
-| Basses fréquences (λ_1, λ_2) | v_1, v_2 | Structure globale, bipartition |
-| **Fréquences intermédiaires** (λ_3 à λ_K) | **v_3 à v_K** | **Sous-clusters, raffinements** |
-| Hautes fréquences (λ_{n-K+1} à λ_n) | v_{n-K+1} à v_n | Atypisme local (Singular) |
+| Objet | modes propres intermédiaires `v_3..v_K` | **relaxation SDP du nombre de Lovász `ϑ(H)`** |
+| Graphe | Laplacien de `W` | graphe d'interdépendance `H = 1[W ≥ τ]` |
+| Score | `max_k \|v_k[i]\|` | `FS(i) = ‖y_i‖²` via dual de Lemaréchal–Oustry |
+| Sélection | extrêmes par mode | **farthest-point** (cosinus) |
+| Sémantique | sous-clusters | **info non-redondante / signaux faibles** |
 
-Les **modes intermédiaires** sont rarement exploités directement, mais ils contiennent l'info de la structure multi-cluster du graphe. Chaque v_k pour k entre 3 et 10 peut être vu comme un "raffinement" du Fiedler vector : il subdivise les clusters précédents.
-
-L'idée des Theta nodes : pour chaque mode intermédiaire v_k, identifier les nœuds avec une **forte projection positive ou négative** sur ce mode — ce sont les "représentants extrêmes" du sous-cluster correspondant.
-
-## Définition formelle
-
-Pour un nœud `i` et un mode propre `k`, on a une **projection** `v_k[i]`. On définit le score Theta comme :
-
-```
-theta_score(i) = max_{k=3..K} |v_k[i]|
-```
-
-Le `max` sur les K premiers modes intermédiaires (typiquement K=8). Si un nœud a une projection forte sur **au moins un** mode intermédiaire, il est un Theta — il représente fortement un sous-cluster.
-
-C'est différent de Singular (qui regarde les **dernières** valeurs propres) et de Hinge (qui regarde la frontière de v_2 et la betweenness).
-
-## Pourquoi pas juste faire du spectral clustering classique ?
-
-Question légitime : on pourrait faire k-means sur l'embedding spectral, identifier des clusters, et prendre les centroïdes. Pourquoi cette approche par max-projection ?
-
-Trois raisons :
-
-**1. Pas besoin de fixer K à l'avance.** Le nombre de clusters d'un corpus est inconnu. La méthode par max-projection s'adapte automatiquement : si un mode propre intermédiaire ne sépare rien d'intéressant, il n'y a pas de nœud avec une forte projection dessus.
-
-**2. Préservation de la hiérarchie.** Chaque mode v_k correspond à un niveau de granularité différent. v_3 capte une sous-structure plus large que v_8. La méthode max-projection laisse le nœud "choisir" le mode qui le caractérise le mieux.
-
-**3. Compatibilité avec Singular et Hinge.** Comme Singular et Hinge sont déjà définis par d'autres bandes du spectre, Theta complète naturellement l'arsenal sans recouvrement.
-
-## Le risque de recouvrement avec Singular et Hinge
-
-Un nœud peut potentiellement satisfaire plusieurs critères. Solutions :
-
-**1. Filtrage par exclusion.** Calculer d'abord Singular, puis Hinge, puis Theta sur ce qui reste. Les sets sont disjoints.
-
-**2. Tagging multiple.** Un nœud peut être à la fois Singular et Theta. On accepte le recouvrement et on l'affiche dans la visualisation.
-
-**3. Choix exclusif par score relatif.** Pour chaque nœud, on regarde lequel des trois scores est le plus élevé, et on lui assigne cette catégorie.
-
-Eigenmind utilise l'option 1 (filtrage par exclusion). On calcule Singular, on retire ces nœuds, on calcule Hinge, on retire ces nœuds, **puis** on calcule Theta sur le reste. Trois ensembles disjoints, plus simples à interpréter.
-
-## Combien de Theta extraire ?
-
-On vise typiquement **10-20%** du corpus en Theta nodes, après retrait des Singular et Hinge. Si le corpus est très clusterisé, on aura beaucoup de Theta (un par sous-cluster). Si le corpus est homogène, on en aura peu.
-
-## Critère de sélection raffiné
-
-Plutôt que prendre les top-N globaux, on peut prendre **les top-K nœuds par mode propre** :
-
-```
-pour chaque k = 3, 4, ..., K:
-    extraire les 2 nœuds avec max v_k[i] positif (extrême positif du mode k)
-    extraire les 2 nœuds avec max v_k[i] négatif (extrême négatif du mode k)
-```
-
-Avec K=8, on prend ~28 nœuds qui couvrent toute la diversité des sous-clusters.
-
-Cette approche garantit la **diversité** des Theta — pas tous concentrés sur le même mode propre. Eigenmind utilise cette stratégie.
-
-## Utilisation downstream
-
-Les Theta nodes sont les **représentants de sous-clusters**. Concrètement :
-
-- **Vue d'ensemble** : la liste des Theta donne un aperçu rapide des sous-thématiques du corpus. "Voici 10 chunks qui résument la diversité du document."
-- **Navigation** : dans le Graph Explorer (phase 3), cliquer sur un Theta saute vers le sous-cluster qu'il représente.
-- **Diversification du retrieval** : quand l'utilisateur pose une question vague ("résume-moi le document"), on inclut des Theta dans le contexte pour garantir une couverture multi-thématique.
-
-## Le piège : Theta très corrélés
-
-Si le corpus a une structure très hiérarchique (gros cluster A subdivisé en A1, A2 ; gros cluster B subdivisé en B1, B2, B3), plusieurs modes propres peuvent **encoder la même information** (juste à des niveaux de granularité différents). Tu peux te retrouver avec des Theta très redondants — plusieurs nœuds qui représentent essentiellement A1.
-
-Mitigation : déduplication post-hoc. Après avoir collecté tous les Theta candidates, on calcule leur similarité cosinus mutuelle (via leurs embeddings sémantiques d'origine, pas spectraux). Si deux Theta ont cos > 0.85, on garde celui avec le score plus haut et on retire l'autre.
-
-## Quand les Theta sont inutiles
-
-Deux cas où le concept perd son sens :
-
-- **Corpus très petit** (<30 chunks) : les modes intermédiaires ne discriminent pas vraiment. v_3 ressemble à v_2, etc.
-- **Corpus totalement homogène** : tous les modes intermédiaires ont des projections faibles partout. Les Theta extraits seraient quasi-aléatoires.
-
-Dans ces cas, Eigenmind affiche un message d'info et passe les Theta. Le RAG continue de fonctionner avec Singular + Hinge.
-
-## Récapitulatif : les trois types de nœuds
-
-| Type | Bande spectrale | Critère principal | Rôle |
-|---|---|---|---|
-| **Singular** | Hautes fréquences (λ_n, λ_{n-1}, ...) | Forte projection sur les derniers v | Atypique global, original |
-| **Hinge** | Basse fréquence (v_2 + betweenness) | Frontière Fiedler + betweenness | Pivot inter-cluster |
-| **Theta** | Fréquences intermédiaires (v_3 à v_K) | Forte projection sur un mode intermédiaire | Représentant de sous-cluster |
-
-Les trois ensembles sont disjoints (filtrage par exclusion) et couvrent ensemble les "chunks remarquables" du corpus. Le reste — la majorité — est du contenu "mainstream" qui forme la masse du document.
-
-C'est cette anatomie en quatre catégories (Singular, Hinge, Theta, mainstream) qui structure tout Eigenmind : la visualisation, le retrieval hybride, et l'exploration.
+C'est **l'écart le plus profond** entre le MVP et le mémo. **Le mémo fait foi** : à l'adoption du
+repo complet, `theta.py` devra implémenter la relaxation SDP (sous-gradient sur le dual, matrice
+frontière `F`, scores `‖y_i‖²`, sélection farthest-point). La cible n'est pas « représentants de
+sous-clusters » mais **« chunks d'information unique »**.

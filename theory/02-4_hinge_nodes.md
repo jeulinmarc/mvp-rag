@@ -1,134 +1,135 @@
-# 2.4 — Hinge nodes : les chunks-pivots
+# 2.4 — Hinge nodes : les connecteurs (champ géodésique)
+
+> **Référence faisant foi.** Mémo officiel §4.3 (*Strategy 2 — Hinge Connectors*, module
+> `connectivity.py`). ⚠️ **Cette définition remplace la version précédente**, qui identifiait les
+> Hinge par la **betweenness centrality** + la frontière de Fiedler. Le mémo fait foi : les Hinge
+> sont définis par un **champ géodésique** construit sur des distances de log-similarité. Note
+> d'implémentation en fin de doc.
 
 ## Qu'est-ce qu'un Hinge node ?
 
-Un Hinge node est un chunk qui **fait le pont entre plusieurs clusters thématiques**. Il appartient à la **frontière** entre deux ou plusieurs zones du corpus, pas au cœur d'aucune.
+Un Hinge node est un chunk qui **fait le pont entre les deux extrêmes thématiques** du corpus. Il
+est à mi-chemin, connecté aux deux pôles, sans appartenir franchement à aucun.
 
-Exemples concrets :
+Question d'analyste : *« Quels concepts relient les deux extrêmes thématiques ? »*
 
-- Dans un rapport multi-thème : la phrase de transition qui passe du chapitre "ventes" au chapitre "RH" en évoquant les deux.
-- Dans une thèse interdisciplinaire : le paragraphe qui relie le contexte théorique (sciences sociales) à la méthode quantitative (statistiques).
-- Dans un papier de ML : la section qui connecte la formulation mathématique au protocole expérimental.
+Exemples (§4.3) :
 
-En graphe-speak : un Hinge node est traversé par beaucoup de **chemins courts** entre paires de nœuds qui ne sont pas voisins directs. Si on le supprimait, plusieurs chemins du graphe deviendraient soudainement très longs — ou disparaîtraient.
+- Dans un corpus compétition US–Chine, les Hinge pourraient être des passages sur les **chaînes
+  d'approvisionnement de semi-conducteurs** ou la **logistique des terres rares** — présents à la
+  fois dans les arguments de confinement et d'interdépendance.
+- Dans un corpus de politique monétaire, un Hinge pourrait discuter le **mou du marché du
+  travail** — pertinent pour les *hawks* comme pour les *doves*.
 
-## Pourquoi c'est précieux en RAG
+## La construction : un champ géodésique sur le graphe de similarité
 
-Trois utilités principales :
+L'idée : transformer les similarités en **distances**, calculer le « relief » du graphe vu depuis
+son point le plus périphérique, puis repérer les nœuds situés à **mi-pente entre les deux pôles
+de ce relief**.
 
-**1. Réponses inter-thématiques.** Question : "Comment la stratégie commerciale s'aligne-t-elle avec la politique RH ?" Aucun chunk du cluster "ventes" ni du cluster "RH" ne répond directement. Mais le Hinge entre ces deux clusters est probablement la clé. Sans lui dans le contexte, le LLM doit "deviner" la connexion. Avec lui, elle est explicite.
+### 1. Transformation en longueurs (log-similarité)
 
-**2. Cohérence globale.** Quand le LLM voit uniquement le top-k cosinus, il voit un sous-ensemble cohérent mais étroit du corpus. Ajouter un Hinge donne une **vue d'ensemble** : "voilà comment ce sujet s'articule avec le reste du doc". Améliore les synthèses.
+```
+ℓ_ij = − log W_ij ∈ [0, +∞)        ℓ_ij = +∞ si W_ij = 0
+```
 
-**3. Exploration.** Quand un utilisateur explore un corpus inconnu, partir des Hinge nodes lui montre la **structure narrative** du document — comment les idées s'enchaînent. Plus utile que partir de chunks aléatoires.
+Plus deux chunks sont similaires (`W_ij → 1`), plus la longueur d'arête est courte (`ℓ_ij → 0`).
 
-## Distinction Singular vs Hinge
+### 2. Distances géodésiques toutes paires
 
-À ne pas confondre, même si les deux sont des nœuds "spéciaux" :
+```
+d(u, v) = min_{γ : u → v} Σ_{(i,j) ∈ γ} ℓ_ij
+```
 
-| | Singular | Hinge |
+C'est le plus court chemin pondéré (Dijkstra toutes paires). Les paires déconnectées reçoivent une
+pénalité `10 · max_finite d`. Complexité `O(n² log n + nm)`, praticable `n ≲ 500`.
+
+### 3. Source périphérique et champ géodésique
+
+On prend comme source le nœud le **plus périphérique** (celui dont la somme des distances aux
+autres est maximale), puis on en mesure le champ de distance, qu'on **centre et normalise** :
+
+```
+v* = argmax_v Σ_j d(v, j)                          # source périphérique
+x_i^raw = d(v*, i)                                  # champ brut
+x̄ = (Σ_i d_i x_i^raw) / (Σ_i d_i)                  # moyenne pondérée par les degrés
+x_i = (x_i^raw − x̄) / max_i |x_i^raw − x̄| ∈ [−1, 1]   # champ normalisé
+```
+
+`x_i` situe chaque nœud sur un axe `[−1, +1]` : `−1` côté source périphérique, `+1` à l'opposé,
+`0` au milieu.
+
+### 4. Définition des pôles
+
+```
+P₊ = { i : x_i ≥ q_{0.9} }        P₋ = { i : x_i ≤ q_{0.1} }      (fallback 80/20)
+```
+
+(`q_{0.9}`, `q_{0.1}` = quantiles du champ `x`.)
+
+### 5. Score Hinge
+
+```
+S_±(i) = Σ_{j ∈ P_±} W_ij              # affinité de i vers chaque pôle
+B(i)   = min(S₊(i), S₋(i))             # affinité duale équilibrée
+H(i)   = B(i) · (1 − |x_i|)            # score Hinge final
+```
+
+Les Hinge sont les nœuds de **score `H` maximal** : forte affinité **vers les deux** pôles
+(`B(i)` grand) **et** position centrale dans le champ (`1 − |x_i|` grand, donc `x_i ≈ 0`).
+
+## Fondement mathématique
+
+### Motivation formelle : géodésiques de log-similarité
+
+Un chemin de longueur `Σ (− log W_ij)` est minimisé exactement quand il **maximise `∏ W_ij`** —
+c'est-à-dire la **route sémantique la plus cohérente** entre deux chunks. Les géodésiques suivent
+donc les chemins de plus haute affinité.
+
+### Intuition mathématique : champ géodésique comme proxy ℓ∞ (honnête)
+
+L'analogue `ℓ∞` du problème de Fiedler chercherait la fonction la plus lisse saturant l'hypercube
+`‖x‖∞ = 1` avec contraintes de pôles (`x_{i⁺} = +1`, `x_{i⁻} = −1`). Mais le problème non
+contraint `argmin_{‖x‖∞ ≤ 1, x ⊥_w 1} xᵀ L_sym x` a pour minimiseur trivial `x = 0` ; une solution
+non triviale exigerait une égalité de norme saturante ou des conditions de bord explicites.
+
+**Le champ géodésique normalisé `x ∈ [−1,1]^n` doit donc être compris comme un *proxy
+heuristique*** : il est sur la sphère `ℓ∞` par construction et lisse au sens géodésique, mais ce
+n'est **pas** la solution d'un problème variationnel ℓ∞ bien posé. Les Hinge sont les nœuds proches
+du **niveau zéro** de ce champ.
+
+### Fonctionnelle Hinge
+
+`B(i) = min(S₊, S₋)` récompense l'**affinité duale équilibrée** ; le facteur `(1 − |x_i|)`
+pénalise les nœuds trop proches d'un extrême. Un vrai connecteur est central **et** également
+attiré par les deux pôles.
+
+### Limites connues
+
+Sensibilité au seuil de sparsification `τ`, **hubness sémantique** (les nœuds de haut degré
+dominent les chemins géodésiques et biaisent le champ), et **anisotropie de l'embedding**.
+
+## Interprétation sémantique
+
+> *(Heuristique)* Les connecteurs sont des **ponts conceptuels plausibles.**
+
+Un Hinge est le concept que les deux camps d'un débat invoquent tous les deux. Dans un dossier
+contradictoire, ce sont les passages charnières où les deux thèses se rencontrent — exactement ce
+qu'il faut injecter dans le contexte du LLM pour une réponse **inter-thématique** cohérente, plutôt
+qu'un top-k enfermé dans un seul cluster.
+
+## ⚠️ Note d'implémentation MVP
+
+Notre `hinge.py` combine **betweenness centrality (0.5) + frontière de Fiedler `1−|v_2|` (0.3) +
+diversité des voisins (0.2)**, plus un bypass sur les *articulation points*. C'est une approche
+classique de théorie des graphes, mais **différente du mémo** :
+
+| | Notre `hinge.py` | Mémo officiel |
 |---|---|---|
-| Position dans le graphe | En marge | À la frontière |
-| Similarité aux voisins | Faible | Moyenne |
-| Centralité de degré | Basse | Souvent élevée |
-| Rôle | Atypique, original | Connecteur |
-| Risque | Bruit (artefacts) | Chunk générique (peu informatif) |
-| Intuition | "Ne ressemble à rien" | "Ressemble à tout le monde" |
+| Objet central | betweenness + Fiedler `v_2` | **champ géodésique** sur `ℓ_ij = −log W_ij` |
+| Pôles | signe de `v_2` | quantiles `q_{0.9}`/`q_{0.1}` du champ `x` |
+| Score | somme pondérée de 3 critères | `H(i) = B(i)·(1 − \|x_i\|)`, `B = min(S₊,S₋)` |
 
-Un Singular est isolé. Un Hinge est connecté à tout (ou à plusieurs zones distinctes).
-
-## Comment les identifier formellement
-
-Plusieurs métriques classiques en théorie des graphes, à combiner.
-
-### Critère 1 — Betweenness centrality (le plus important)
-
-Pour chaque paire de nœuds `(u, v)` du graphe, on calcule le **plus court chemin** entre eux. Pour chaque nœud `i`, on compte la **fraction de ces chemins qui passent par `i`**.
-
-```
-betweenness(i) = Σ_{u≠v≠i} (nb_shortest_paths(u,v) passant par i) / nb_shortest_paths(u,v)
-```
-
-Plus la betweenness est élevée, plus le nœud est un point de passage obligé du graphe. Les Hinges ont une **betweenness très élevée** par construction.
-
-Coût : O(n·m) pour un graphe sparse avec l'algorithme de Brandes. Sur 1000 nœuds et 5000 arêtes, ça prend ~1s en NetworkX. C'est la métrique la plus coûteuse, on l'utilise quand même parce qu'elle est canonique.
-
-### Critère 2 — Faible projection sur le Fiedler vector
-
-Souviens-toi du Fiedler vector (vu en 2.2) : il sépare le graphe en deux clusters selon le signe. Les nœuds avec **v_2[i] proche de 0** sont sur la frontière entre les deux clusters — ils ne penchent ni d'un côté ni de l'autre.
-
-```
-hinge_fiedler_score(i) = 1 - |v_2[i]|
-```
-
-Plus le score est haut, plus le nœud est sur la frontière.
-
-### Critère 3 — Diversité des voisins (multi-cluster membership)
-
-Un Hinge a des voisins **dans plusieurs clusters**. Pour formaliser ça, on prend le spectral embedding (les `k` premiers vecteurs propres) et on regarde la **dispersion** des coordonnées spectrales des voisins.
-
-```
-neighbor_diversity(i) = std({embedding_spectral(j) for j ∈ N(i)})
-```
-
-Plus la dispersion est grande, plus les voisins sont éclatés dans plusieurs clusters → plus le nœud est un pont.
-
-### Critère 4 — Articulation points (cas extrême)
-
-Un **articulation point** est un nœud dont la suppression **déconnecte le graphe**. C'est le Hinge maximal. NetworkX a `nx.articulation_points(G)` qui les liste.
-
-En pratique sur un k-NN graph bien connecté, il y en a peu (le graphe est trop redondant). Mais quand il y en a, ce sont des Hinges **certains**. On les boost en priorité.
-
-## Pondération des critères
-
-Choix Eigenmind par défaut :
-
-| Critère | Poids |
-|---|---|
-| Betweenness centrality | 0.5 |
-| 1 − \|v_2\| (frontière Fiedler) | 0.3 |
-| Neighbor diversity spectrale | 0.2 |
-
-La betweenness est le pilier — c'est *la* mesure classique des nœuds-ponts en théorie des graphes. Les autres affinent.
-
-Si un nœud est articulation point, on lui donne automatiquement un score = 1.0 (bypass).
-
-## Pourquoi pas seulement betweenness ?
-
-Question naturelle : pourquoi ne pas se contenter de la betweenness ?
-
-Deux raisons :
-
-**1. Coût.** Betweenness exact est O(n·m). Sur 10 000 nœuds et 50 000 arêtes, ça prend ~10s. Combiné avec d'autres métriques moins coûteuses (Fiedler vector déjà calculé), on a un score plus robuste sans coût additionnel significatif.
-
-**2. Robustesse.** La betweenness pure peut "élire Hinge" un nœud central d'un cluster homogène simplement parce que beaucoup de chemins passent par lui (effet "hub"). Le critère Fiedler corrige : un vrai Hinge est à la frontière, pas au centre d'un cluster. La combinaison des deux est plus discriminante.
-
-## Le piège : Hinge ≠ chunk générique
-
-Un chunk avec du contenu très général ("Cette section présente nos résultats principaux") peut artificiellement avoir une betweenness élevée parce qu'il "ressemble à tout le monde un peu". Mais il n'apporte pas vraiment de connexion thématique informative.
-
-Mitigations :
-
-- **Filtrer par longueur** comme pour Singular — un Hinge trop court (<150 chars) est suspect.
-- **Vérifier le Fiedler score** — un vrai Hinge doit avoir v_2 proche de 0, pas juste une betweenness élevée.
-- **Sanity check humain** : afficher les top Hinges et vérifier que ce sont des passages charnières et non du remplissage.
-
-## Approximations pour grands graphes
-
-Pour des graphes >10 000 nœuds, betweenness exact devient prohibitif. NetworkX propose `nx.betweenness_centrality(G, k=1000)` qui calcule sur un échantillon de **k nœuds sources**. Précision réduite mais beaucoup plus rapide. Pour Eigenmind à l'échelle d'un utilisateur, on garde exact.
-
-## Utilisation downstream
-
-Les Hinge nodes seront exploités en 2.6 et phase 3 :
-
-- **Boost contextuel** : quand le top-k Qdrant ramène des chunks de plusieurs clusters distincts, on ajoute le Hinge qui les connecte. La réponse devient plus cohérente.
-- **Visualisation** : dans le Graph Explorer, les Hinges seront colorés différemment (rouge/orange) pour montrer la structure narrative du document.
-- **Résumés inter-thématiques** : quand l'utilisateur demande "donne-moi un résumé global", on bourre le contexte de Hinges plutôt que de chunks redondants.
-
-## Lien avec d'autres notions
-
-- **Communities detection** (Louvain, Leiden) : les Hinges sont à la frontière entre communautés détectées. Mais on n'a pas besoin de Louvain : la décomposition spectrale fait le job indirectement via le Fiedler vector.
-- **Bridges** (théorie des graphes) : une arête bridge est une arête dont la suppression déconnecte le graphe. Un nœud articulation est l'équivalent côté nœud. Concepts duaux.
-- **Brokerage** (réseaux sociaux) : Burt's structural holes — un Hinge est l'analogue d'un "broker" qui exploite les trous structurels d'un réseau social.
-
-C'est tout l'avantage d'utiliser des concepts standards de théorie des graphes : on hérite d'un demi-siècle de littérature.
+Les deux capturent l'idée « nœud-pont », mais **le mémo fait foi**. À l'adoption du repo complet,
+`hinge.py` devra implémenter le champ géodésique (Dijkstra toutes paires sur `−log W`, source
+périphérique, score `H`).

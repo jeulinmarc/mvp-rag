@@ -1,140 +1,142 @@
-# 2.1 — Construction d'un graphe de similarité
+# 2.1 — Construction du graphe de similarité
+
+> **Référence faisant foi.** Ce chapitre suit le mémo officiel Merlin Intelligence
+> (`theory/260522_Eigenmind_Cognitive_Maps.pdf`, §3.1 et §4.1). Là où notre MVP avait pris
+> une route différente, c'est **la définition du mémo qui prévaut**. Une note d'implémentation
+> en fin de doc signale ce que `build_graph.py` fait encore autrement.
 
 ## Pourquoi un graphe au-dessus des embeddings ?
 
-Avec uniquement des embeddings et Qdrant, tu vois le corpus comme un **nuage de points** dans un espace 384-d. Tu peux trouver les voisins d'un point donné, mais tu ne vois pas la **structure globale** : quels groupes de chunks parlent du même sujet, quels chunks sont des ponts entre groupes, quels chunks sont isolés.
+Avec uniquement des embeddings et Qdrant, on voit le corpus comme un **nuage de points** dans
+un espace 384-d. On peut trouver les voisins d'un point, mais pas la **structure globale** :
+quels groupes de chunks parlent du même sujet, lesquels font le pont entre groupes, lesquels
+sont isolés.
 
-Un graphe explicite cette structure. Tu transformes le nuage de points en un **réseau** où :
-- chaque chunk est un nœud,
-- deux chunks sémantiquement proches sont reliés par une arête,
-- le poids de l'arête est leur similarité cosinus.
+Le graphe explicite cette structure : chaque chunk est un nœud, deux chunks sémantiquement
+proches sont reliés, le poids de l'arête est leur similarité cosinus. Sur ce graphe on applique
+toute la machinerie de la théorie des graphes : Laplacien, géodésiques, relaxations SDP.
 
-Sur ce graphe tu peux appliquer toute la machinerie de la théorie des graphes : centralité, clustering, décomposition spectrale, parcours, communautés. C'est radicalement plus expressif qu'un nuage de points.
+## Deux régimes de similarité (le point que notre MVP avait raté)
 
-## Le compromis : graphe dense vs graphe sparse
+Le mémo distingue **deux usages** de la similarité, qui ne sont pas redondants (§3.2.2) :
 
-Si tu connectes **tous les chunks à tous les autres**, ton graphe est complet : `n` nœuds, `n²` arêtes. Pour 1000 chunks, ça fait 1 million d'arêtes. La plupart sont des liens entre chunks très différents (similarité ~0.05), donc du bruit pur. Inutile en pratique.
+- **Retrieval top-k** (`store.similarity_search`, utilisé dans `pipelines/rag.py`) : un seul
+  appel, `k` résultats, **pas de structure de graphe**. C'est le RAG dense classique. Il optimise
+  la *pertinence au prompt*.
+- **Exploration BFS** (`exploration.py`) : une **séquence** de lookups top-k où chaque requête
+  est un *ID de point déjà stocké* plutôt qu'un nouvel embedding, accumulant un **sous-graphe de
+  travail**. Il optimise la *couverture du voisinage du prompt*.
 
-Pour avoir un graphe **utile**, il faut **sparsifier** : ne garder que les arêtes significatives. Trois stratégies classiques :
+> Question d'analyste : *« Est-ce que je veux ce que le prompt demande, ou à quoi ressemble le
+> monde autour du prompt ? »*
 
-### 1. Threshold global (le plus simple)
+**Les trois stratégies de la phase 2 (Singular, Hinge, Theta) opèrent sur le second régime** :
+elles analysent le sous-graphe BFS, pas la collection entière.
 
-On ne garde que les arêtes avec `similarité > seuil`. Par exemple seuil = 0.5.
+## Étape 0 — le sous-graphe par BFS sur l'index ANN (`exploration.py`)
+
+Le « graphe » parcouru est l'**index approximate-nearest-neighbour (ANN) de Qdrant** : ses arêtes
+relient chaque vecteur stocké à ses `k` plus proches voisins en espace d'embedding. Le BFS suit
+ces liens ANN vers l'extérieur depuis le prompt.
+
+1. **Seed.** Encoder le prompt `q ↦ φ(q) ∈ ℝ^d`. Récupérer les `K_0` vecteurs les plus proches
+   (`K_0 = NEIGHBORS_TO_FETCH` dans `config.py`) ; initialiser la file BFS `Q` et l'ensemble
+   visité `V`.
+2. **Expansion BFS.** Tant que `|V| < N_max` (`N_max = MAX_CHUNKS_FOR_CONTEXT`) et `Q ≠ ∅` :
+   défiler `v`, récupérer ses `K_0` plus proches voisins hors `V`, enfiler les nouveaux IDs.
+3. **Récupération groupée.** Fetch tous les vecteurs `{φ_i}_{i∈V}` et payloads en un seul appel.
+4. **Matrice de similarité** (étape 3.1 ci-dessous).
+
+> **Caveat ANN (§4.1.1).** Le sous-graphe induit porte trois limites structurelles :
+> *approximation* (HNSW ne renvoie pas les voisins exacts), *asymétrie* (le graphe ANN est
+> orienté ; `u` peut être dans les `k` voisins de `v` sans réciproque — la matrice cosinus
+> `W = ΦΦᵀ` restaure ensuite la symétrie), et *dépendance à l'encodeur* (la connectivité
+> sémantique ne vaut que ce que vaut l'embedding).
+
+## Étape 1 — la matrice de similarité cosinus (`singular.py`, §3.1)
+
+### Matrice d'embedding et matrice de Gram
+
+On empile les `n` embeddings du sous-graphe dans `Φ ∈ ℝ^{n×d}` (ligne `i` = `φ_iᵀ`). Chaque `φ_i`
+est (approximativement) ℓ₂-unitaire. La matrice de Gram brute est :
 
 ```
-si cos(chunk_i, chunk_j) > 0.5 :
-    ajouter une arête (i, j, poids = cos)
+W_raw = Φ Φᵀ ∈ ℝ^{n×n} ,    W_raw[i,j] = φ_iᵀ φ_j ≈ cos∠(φ_i, φ_j)
 ```
 
-Avantages : simple, le poids reflète vraiment la similarité.
-Inconvénients : choix arbitraire du seuil. Trop bas → bruit. Trop haut → graphe disconnecté. Et certains chunks "moyennement" similaires à tout le monde peuvent finir isolés sans aucune arête.
+Symétrique, semi-définie positive, de rang ≤ `d`. Ses valeurs propres non nulles sont exactement
+les **valeurs singulières au carré** de `Φ` (d'où le nom du module `singular.py`).
 
-### 2. k-NN graph (notre choix)
+### Sparsification par **seuil** (et non par k-NN)
 
-Pour chaque chunk, on garde les **k voisins les plus similaires**, point. Pas de seuil global. Chaque nœud a forcément k arêtes sortantes.
+C'est ici que notre MVP divergeait. Le mémo **ne fait pas de k-NN** : il applique un **seuil de
+similarité unique** `τ = SIMILARITY_THRESHOLD` (défaut **0.65**) :
 
 ```
-pour chaque chunk_i :
-    voisins = top-k chunks j != i par similarité
-    pour chaque j dans voisins :
-        ajouter une arête (i, j, poids = cos(i, j))
+W[i,j] = W_raw[i,j]   si W_raw[i,j] ≥ τ  et  i ≠ j
+         0            sinon
 ```
 
-Avantages : tout le monde est connecté, garantie de structure. Reflète la **structure locale** du corpus.
-Inconvénients : k-NN est **asymétrique** par construction (i peut avoir j comme voisin sans que l'inverse soit vrai). On symétrise ensuite.
+La diagonale est forcée à zéro : `W_ii = 0`.
 
-### 3. Mutual k-NN graph
+### Pourquoi zéro sur la diagonale ?
 
-Variante stricte de k-NN : on garde une arête (i, j) uniquement si **les deux** sont voisins l'un de l'autre. Plus stringent, donne un graphe plus sparse et "épuré".
+Les méthodes spectrales requièrent une **adjacence**, pas un noyau. Avec `W_ii = ‖φ_i‖² = 1` sur
+la diagonale, le Laplacien `L = D − W` serait biaisé par les boucles (*self-loops*), et l'espace
+nul du Laplacien normalisé n'encoderait plus proprement les composantes connexes. On enlève donc
+la diagonale pour traiter `W` comme l'adjacence d'un graphe pondéré sans boucle.
 
-Utile pour faire ressortir les liens vraiment forts. Inconvénient : certains chunks peuvent se retrouver sans aucune arête.
+### Ce que ça produit
 
-## Choix de k
+Une matrice symétrique `W ∈ [0,1]^{n×n}` avec `W_ii = 0`, dont la densité d'arêtes est pilotée
+par `τ`. **`W` est l'unique objet mathématique** consommé par les trois stratégies de §4 :
+spectrale (Singular), géodésique (Hinge) et theta (Frontier).
 
-Combien de voisins par chunk ?
+## `τ` : le bouton de calibration (et la « ligne éditoriale »)
 
-- **k trop petit** (2-3) : graphe fragmenté, plusieurs composantes connexes, perte d'info structurelle.
-- **k trop grand** (50+) : graphe dense, le bruit revient.
-- **Sweet spot** : k entre 5 et 15 pour la plupart des corpus.
+Le scalaire `τ` gouverne à lui seul (§3.1 *Mathematical Grounding*) :
 
-Règle empirique : `k ≈ sqrt(n)` où `n` est le nombre de chunks. Pour 100 chunks, k=10. Pour 10 000 chunks, k=100. Mais en pratique on plafonne à ~15 même pour les très gros corpus.
+1. l'ensemble d'arêtes du graphe induit par le BFS ;
+2. la **connectivité** de `W` ;
+3. le graphe d'interdépendance `H = 1[W ≥ τ]` qui alimente la relaxation theta (cf. `02-5`).
 
-Eigenmind utilise typiquement k=10. C'est ce qu'on met par défaut.
+- `τ` **bas** → graphe dense, spectre plus lisse, liaisons thématiques permissives (bon pour
+  l'exploration, dangereux pour l'inférence).
+- `τ` **haut** → graphe fragmenté, multiplicité de `λ = 0` qui gonfle, notion de parenté stricte
+  (bon pour l'analyse contrastive, mais risque de fragmentation).
 
-## Symétrie : graphe orienté ou non ?
-
-Mathématiquement, la similarité cosinus est **symétrique** : `cos(a, b) = cos(b, a)`. Mais le k-NN est asymétrique : si j est dans le top-k de i, l'inverse n'est pas garanti.
-
-Deux façons de symétriser :
-
-**Union (OR)** — on garde une arête (i, j) si i est voisin de j **ou** j est voisin de i. Graphe plus dense, plus de connectivité.
-
-**Intersection (AND)** — on garde l'arête uniquement si les deux sont voisins mutuellement (= mutual k-NN). Graphe plus sparse, liens plus stricts.
-
-On utilise **Union** par défaut — on veut un graphe bien connecté pour la suite (Laplacien stable).
-
-## Self-loops : à exclure
-
-Un chunk est trivialement le voisin le plus proche de lui-même (`cos(i, i) = 1.0`). On l'exclut systématiquement : pas d'arête (i, i). Les self-loops polluent l'analyse spectrale (font monter artificiellement les degrés).
-
-En pratique, quand on cherche les top-k voisins, on demande **k+1** et on exclut le chunk lui-même.
-
-## Calcul efficace : matrice de similarité
-
-Plutôt que de boucler en Python sur toutes les paires (lent), on calcule la **matrice de similarité** d'un coup avec numpy. Vu que nos embeddings sont L2-normalisés, c'est juste un produit matriciel :
-
-```python
-E = np.array(embeddings)         # shape (n, 384)
-S = E @ E.T                      # shape (n, n), similarité cosinus
-```
-
-Pour 1000 chunks de dim 384 : 1000 × 1000 × 384 = ~400 millions de flops. Sur un Mac M3, ça prend ~50ms. Pour 10 000 chunks, ça monte à 4ms × 10 000 = ~5s, et la matrice fait 100M × 8 octets = 800 MB en RAM. Au-delà, on doit batcher ou utiliser des libs spécialisées.
-
-Pour Eigenmind à l'échelle d'un utilisateur (quelques centaines à milliers de chunks), aucun souci.
+Interprétation sémantique (§3.1) : chaque entrée `W_ij` dit *« les chunks i et j parlent de la
+même chose, avec confiance W_ij »*. Le seuil `τ` est la **ligne éditoriale** du système :
+*« au-dessus de quel niveau de similarité j'accepte que deux passages parlent du même sujet ? »*
 
 ## NetworkX : la lib graphe en Python
 
-NetworkX est la lib standard pour manipuler des graphes en Python. Riche, lisible, mais pas la plus rapide — pour des graphes massifs (millions d'arêtes) on basculerait sur `graph-tool` ou `igraph`. À notre échelle, NetworkX est parfait.
+NetworkX manipule des graphes en Python. À l'échelle d'un sous-graphe analyste (quelques
+centaines de nœuds), elle suffit largement.
 
-Vocabulaire NetworkX :
+```python
+import networkx as nx
+G = nx.from_numpy_array(W)              # graphe pondéré non-orienté depuis W
+A = nx.to_numpy_array(G)                # retour matrice si besoin
+```
 
-- `nx.Graph()` — graphe non-orienté.
-- `nx.DiGraph()` — graphe orienté.
-- `G.add_node(id, **attrs)` — ajouter un nœud avec attributs libres.
-- `G.add_edge(i, j, weight=w)` — ajouter une arête pondérée.
-- `G.nodes[i]` — attributs d'un nœud.
-- `G[i][j]['weight']` — poids d'une arête.
-- `nx.adjacency_matrix(G)` — matrice d'adjacence sparse (pour la suite spectrale).
+## Quand reconstruire ?
 
-## Liens avec le retrieval
+Le sous-graphe est **local au prompt** : il est reconstruit à chaque requête d'exploration via le
+BFS. Il n'y a donc pas de « graphe global du corpus » à maintenir — c'est une différence
+importante avec une approche k-NN globale.
 
-Le graphe n'est **pas** une alternative au retrieval Qdrant. C'est une **structure analytique** par-dessus.
+## ⚠️ Note d'implémentation MVP
 
-Quand un utilisateur pose une question :
-1. Qdrant fait le retrieval top-k vectoriel (rapide, étape obligatoire).
-2. Le graphe enrichit ce top-k avec des chunks **Singular** (originaux), **Hinge** (pivots) ou via exploration locale (voisinage d'un chunk pertinent).
+`build_graph.py` (notre code) construit pour l'instant un **k-NN global (k=10) sur tous les
+chunks de la collection**, symétrisé par union, et le met en cache (`GraphAwareCache`). C'est une
+simplification pédagogique qui **diverge du mémo** sur deux points :
 
-C'est ce qu'on fera en 2.6. Pour l'instant, on construit juste le graphe.
+| | Notre `build_graph.py` | Mémo officiel |
+|---|---|---|
+| Périmètre | corpus entier | sous-graphe **local** par BFS (`exploration.py`) |
+| Sparsification | k-NN (k=10) + union | **seuil** `τ = 0.65` sur `W = ΦΦᵀ` |
 
-## Quand reconstruire le graphe ?
-
-Le graphe dépend de tous les embeddings de la collection. Si tu ajoutes 1 nouveau chunk, ses k voisins peuvent changer **et** il peut devenir le voisin d'autres chunks (modifiant leur voisinage).
-
-Trois stratégies :
-
-**Recompute total** — à chaque ajout important, on reconstruit tout. Lent mais simple. Pour Eigenmind en MVP : on accepte ça, on recompute après chaque ingestion.
-
-**Incremental update** — n'ajouter que les nouvelles arêtes liées au nouveau chunk, garder le reste intact. Plus complexe, parfois imprécis (un chunk existant peut maintenant avoir un meilleur voisin).
-
-**Lazy / on-demand** — ne calculer le graphe que quand on en a besoin (à la requête), pas à l'ingestion. Trade-off latence vs fraîcheur.
-
-On part sur **recompute total**, suffisant pour la phase 2.
-
-## Caching et persistence
-
-Le graphe doit être recalculé après chaque modif du corpus mais pas à chaque requête. Stratégies de cache :
-
-- Sauver le graphe sur disque via `nx.write_gpickle(G, "graph.pkl")` puis `G = nx.read_gpickle("graph.pkl")`.
-- Recompute uniquement si la dernière modif Qdrant est plus récente que le snapshot du graphe.
-
-En MVP on garde simple : on recompute à chaque session du script. C'est rapide.
+Les deux produisent un `W` symétrique exploitable, mais le mémo fait foi : à l'adoption du repo
+complet (phase 4), on passera au sous-graphe BFS + seuillage. La suite de la phase 2 (`02-2` à
+`02-6`) décrit les définitions **du mémo**.

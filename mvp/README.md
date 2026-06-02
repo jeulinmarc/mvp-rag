@@ -7,35 +7,47 @@ L'objectif de ce repo n'est pas de fournir un produit utilisable, mais de **comp
 ## État du projet
 
 - ✅ **Phase 1** — MVP RAG end-to-end (CLI avec PDF + question → réponse citée)
-- ⬜ Phase 2 — Couche graphe spectrale (Singular / Hinge / Theta nodes)
-- ⬜ Phase 3 — Interface Streamlit multipage
+- ✅ **Phase 2** — Couche graphe spectrale (Singular / Hinge / Theta nodes), branchée dans le CLI et l'UI
+- ✅ **Phase 3** — Interface Streamlit multipage (5 pages validées end-to-end)
 - ⬜ Phase 4 — Refactor vers la structure du repo officiel (package `eigenmind/`)
 - ⬜ Phase 5 — Connecteurs (Google Drive, SharePoint), OCR, multi-user
 
 Détail dans `theory/00_roadmap.md`.
 
-## Architecture (état actuel — Phase 1)
+## Architecture (état actuel — Phases 1 à 3)
 
 ```
 eigenmind/
 ├── mvp/                        # MVP fonctionnel à plat
 │   ├── docker-compose.yml      # Qdrant en local
 │   ├── requirements.txt        # Dépendances Python
+│   │
+│   │   # Phase 1 — pipeline RAG
 │   ├── embed_text.py           # Sentence embeddings (MiniLM)
 │   ├── load_pdf.py             # Extraction PDF + chunking
 │   ├── store_chunks.py         # Ingestion Qdrant
-│   ├── retrieve.py             # Recherche top-k
+│   ├── retrieve.py             # Recherche dense top-k
 │   ├── ask_llm.py              # Appel LLM (Ollama / Nebius / Groq)
-│   └── mini_rag.py             # Orchestrateur CLI
-├── theory/                     # Documents théoriques
-│   ├── 00_roadmap.md
-│   ├── 01-1_qdrant_vector_db.md
-│   ├── 01-2_embeddings.md
-│   ├── 01-3_chunking.md
-│   ├── 01-4_qdrant_storage.md
-│   ├── 01-5_retrieval.md
-│   ├── 01-6_llm_prompting.md
-│   └── 01-7_assemblage_pipeline.md
+│   ├── mini_rag.py             # Orchestrateur CLI (modes dense/hybrid/compare)
+│   ├── reset_qdrant.py         # Drop de la collection (clean slate)
+│   │
+│   │   # Phase 2 — couche graphe spectrale
+│   ├── build_graph.py          # Graphe de similarité k-NN
+│   ├── spectral.py             # Laplacien normalisé + décomposition propre
+│   ├── singular.py             # Nœuds Singular (modes haute fréquence)
+│   ├── hinge.py                # Nœuds Hinge (betweenness + Fiedler)
+│   ├── theta.py                # Nœuds Theta (sous-clusters thématiques)
+│   ├── hybrid_retrieve.py      # Fusion dense + signaux graphe (GraphAwareCache)
+│   │
+│   │   # Phase 3 — interface Streamlit multipage
+│   ├── streamlit_app.py        # Entrée / accueil
+│   └── pages/
+│       ├── 1_Ingest.py         # Upload + ingestion PDF
+│       ├── 2_Chat.py           # Q/R (toggle hybride vs dense)
+│       ├── 3_Graph_Explorer.py # Visualisation du graphe (Plotly)
+│       ├── 4_Manage.py         # Gestion de la collection
+│       └── 5_Theory.py         # Théorie ↔ code côte à côte
+├── theory/                     # Documents théoriques (01-* à 03-*)
 └── final/                      # Refactor à venir (Phase 4)
 ```
 
@@ -258,6 +270,24 @@ python mini_rag.py ask path/to/document.pdf "Ta question"
 
 Ingère puis interroge en une seule commande.
 
+### Modes de retrieval (couche graphe)
+
+Le `query` (et le `ask`) acceptent `--mode` :
+
+```bash
+python mini_rag.py query "..." --mode dense      # cosinus pur (RAG classique)
+python mini_rag.py query "..." --mode hybrid     # + graphe spectral (défaut)
+python mini_rag.py query "..." --mode compare    # les deux côte à côte
+```
+
+Le mode `compare` lance le retrieval dense **et** hybride, affiche le **Δ retrieval**
+(quels chunks le graphe ajoute, via Singular/Hinge/Theta) puis génère **deux réponses**
+— c'est la façon la plus directe de voir l'impact de la couche eigenmind sur le résultat.
+
+> ⚠️ `hybrid` et `compare` construisent le graphe + la décomposition spectrale à chaque
+> appel CLI (one-shot). C'est plus lent que `dense` ; dans Streamlit, ce cache est
+> construit une seule fois par session.
+
 ### Options
 
 ```bash
@@ -266,6 +296,18 @@ python mini_rag.py query "..." --no-sources    # masquer la liste des chunks
 python mini_rag.py --help                       # aide générale
 python mini_rag.py query --help                 # aide d'une sous-commande
 ```
+
+### Interface web (Streamlit)
+
+Plutôt que le CLI, on peut lancer l'app multipage (ingestion, chat, explorateur de
+graphe, gestion, théorie) :
+
+```bash
+streamlit run streamlit_app.py
+```
+
+Puis ouvrir [http://localhost:8501](http://localhost:8501). La page **Chat** propose un
+toggle « Retrieval hybride (graphe) » pour comparer en direct hybride vs dense pur.
 
 ---
 
@@ -326,6 +368,19 @@ Chaque étape de l'implémentation est documentée en profondeur dans `theory/` 
 | `01-5_retrieval.md`           | MMR, rerankers, hybrid search BM25, HyDE, évaluation   |
 | `01-6_llm_prompting.md`       | Pipeline d'inférence, température, prompt engineering  |
 | `01-7_assemblage_pipeline.md` | Patterns d'orchestration, CLI design                   |
+| `01-8_ingestion_avancee.md`   | Compléments mémo officiel : OCR, ChunkNorris, HNSW     |
+| `02-1_similarity_graph.md`    | W=ΦΦᵀ seuillé (τ), sous-graphe BFS, deux régimes       |
+| `02-2_spectral_analysis.md`   | Laplacien normalisé, vecteur de Fiedler, **Cheeger**   |
+| `02-3_singular_nodes.md`      | Pôles thématiques (antipodes basses fréquences)        |
+| `02-4_hinge_nodes.md`         | Connecteurs via champ géodésique log-similarité        |
+| `02-5_theta_nodes.md`         | Thèmes-frontière : relaxation SDP de Lovász-θ          |
+| `02-6_hybrid_retrieval.md`    | Agrégation `selection_tags` (3 labels)                 |
+| `02-7_epistemologie_et_validation.md` | Niveaux de claim, failure modes, validation    |
+| `260522_…_Cognitive_Maps.pdf` | **Mémo officiel Merlin Intelligence (fait foi)**       |
+| `03-1_streamlit_fundamentals.md` | session_state, cache_resource, file uploader        |
+| `03-2_multipage_state.md`     | Convention multipage, partage d'état, streaming LLM    |
+| `03-3_graph_visualization.md` | Layouts de graphe, coloration par type, Plotly         |
+| `03-4_manage.md`              | Filtres Qdrant par payload, soft vs hard delete        |
 
 
 À lire en parallèle du code, dans l'ordre numérique.

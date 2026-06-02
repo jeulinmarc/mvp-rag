@@ -72,6 +72,11 @@ CHAPTERS: list[dict] = [
         "md": "01-7_assemblage_pipeline.md",
         "code": ["mini_rag.py"],
     },
+    {
+        "title": "1.8 — Ingestion avancée (mémo officiel)",
+        "md": "01-8_ingestion_avancee.md",
+        "code": ["load_pdf.py", "embed_text.py", "store_chunks.py"],
+    },
     # Phase 2 — Spectral graph layer
     {
         "title": "2.1 — Graphe de similarité",
@@ -102,6 +107,11 @@ CHAPTERS: list[dict] = [
         "title": "2.6 — Retrieval hybride",
         "md": "02-6_hybrid_retrieval.md",
         "code": ["hybrid_retrieve.py"],
+    },
+    {
+        "title": "2.7 — Épistémologie & validation (mémo officiel)",
+        "md": "02-7_epistemologie_et_validation.md",
+        "code": [],
     },
     # Phase 3 — Streamlit UI
     {

@@ -4,7 +4,7 @@ Ordre de travail : MVP fonctionnel d'abord (Phases 1-3 dans `mvp/`), puis refact
 
 Pour chaque étape : un fichier de code + un document théorique dans `theory/`.
 
-**État actuel** : Phases 1 et 2 terminées, Phase 3 quasi terminée (pages live, validation visuelle en cours), Phase 4 à démarrer.
+**État actuel** : Phases 1, 2 et 3 terminées (CLI aligné sur le retrieval hybride avec mode `compare` ; 5 pages Streamlit validées end-to-end). MVP fonctionnellement complet. Phase 4 à démarrer.
 
 ---
 
@@ -25,26 +25,27 @@ But : un script CLI qui prend un PDF et répond à une question. Pas d'UI, pas d
 - [x] **1.6** Appel LLM — `ask_llm.py`
   *Théorie : structure d'un prompt RAG, température, max tokens, Ollama API OpenAI-compatible*
 - [x] **1.7** Assemblage — `mini_rag.py`
-  *MVP CLI fonctionnel end-to-end*
+  *MVP CLI fonctionnel end-to-end. Sous-commandes `ingest` / `query` / `ask` ; option `--mode dense|hybrid|compare` (voir 2.6).*
 
 ## Phase 2 — Couche graphe spectrale (dossier `mvp/`) ✅
 
 But : enrichir le retrieval avec l'analyse spectrale du graphe sémantique.
 
 - [x] **2.1** Graphe de similarité — `build_graph.py`
-  *Théorie : matrice de similarité, k-NN graph (k=10), symétrisation par union, graphe pondéré*
+  *Théorie (mémo) : `W = ΦΦᵀ` seuillé à `τ=0.65`, diagonale nulle, sous-graphe local par BFS, deux régimes (top-k vs exploration). Code MVP : k-NN global (k=10) + union — à aligner.*
 - [x] **2.2** Analyse spectrale — `spectral.py`
-  *Théorie : Laplacien normalisé, `nx.normalized_laplacian_matrix` + `np.linalg.eigh`, connectivité algébrique, vecteur de Fiedler*
+  *Théorie (mémo) : Laplacien normalisé `L_sym`, `np.linalg.eigh`, vecteur de Fiedler, énergie de Dirichlet, **inégalité de Cheeger**.*
 - [x] **2.3** Nœuds Singular — `singular.py`
-  *Théorie : modes propres haute fréquence, atypicité sémantique, info non-redondante*
+  *Théorie (mémo) : **pôles thématiques** = extrema des modes **basses** fréquences (antipodes spectraux). Code MVP : atypisme hautes fréquences — à aligner.*
 - [x] **2.4** Nœuds Hinge — `hinge.py`
-  *Théorie : betweenness centrality + frontière du vecteur de Fiedler, articulation points, pivots*
+  *Théorie (mémo) : **champ géodésique** sur `ℓ=−log W` (Dijkstra, source périphérique, `H(i)=B(i)(1−|x|)`). Code MVP : betweenness + Fiedler — à aligner.*
 - [x] **2.5** Nœuds Theta — `theta.py`
-  *Théorie : modes propres intermédiaires, détection de sous-clusters thématiques*
+  *Théorie (mémo) : **relaxation SDP du nombre de Lovász-θ** (dual Lemaréchal–Oustry, `FS(i)=‖y_i‖²`, farthest-point). Code MVP : modes propres intermédiaires — à aligner.*
 - [x] **2.6** Retrieval hybride — `hybrid_retrieve.py`
-  *Théorie : fusion dense top-k + Singular/Hinge/Theta (cos > 0.30, boosts 0.10 / 0.07 / 0.05), `GraphAwareCache` invalidé à chaque modif*
+  *Théorie (mémo) : agrégation `selection_tags` → tagging à 3 labels (Singular/Hinge/Theta), deux régimes top-k vs BFS, « chunks nommés pas vecteurs latents ». Code MVP : fusion par boosts (cos > 0.30 ; +0.10/+0.07/+0.05) sur `GraphAwareCache` — à aligner.*
+  *Exposé dans le CLI (`mini_rag.py --mode hybrid`) et dans la page Chat. Le mode `compare` lance dense + hybride en parallèle et affiche le Δ retrieval + les deux réponses, pour mesurer l'impact de la couche spectrale.*
 
-## Phase 3 — Interface Streamlit (dossier `mvp/`) 🟡
+## Phase 3 — Interface Streamlit (dossier `mvp/`) ✅
 
 But : transformer le CLI en app web utilisable.
 
@@ -99,6 +100,11 @@ But : ranger le code MVP dans l'arborescence du package `eigenmind/`.
 
 ## Index des documents théoriques
 
+> **Document de référence.** Le mémo technique officiel de Merlin Intelligence est archivé dans
+> `theory/260522_Eigenmind_Cognitive_Maps.pdf`. **En cas de divergence, c'est le PDF qui fait
+> foi** : les docs Phase 2 ont été corrigés en conséquence (les définitions de Singular, Hinge et
+> Theta du MVP divergeaient ; voir les notes « ⚠️ Note d'implémentation MVP » en fin de chaque doc).
+
 **Phase 1 — RAG**
 - `01-1_qdrant_vector_db.md`
 - `01-2_embeddings.md`
@@ -107,14 +113,16 @@ But : ranger le code MVP dans l'arborescence du package `eigenmind/`.
 - `01-5_retrieval.md`
 - `01-6_llm_prompting.md`
 - `01-7_assemblage_pipeline.md`
+- `01-8_ingestion_avancee.md` — compléments mémo officiel (OCR canal bruité, ChunkNorris, HNSW)
 
-**Phase 2 — Graphe spectral**
-- `02-1_similarity_graph.md`
-- `02-2_spectral_analysis.md`
-- `02-3_singular_nodes.md`
-- `02-4_hinge_nodes.md`
-- `02-5_theta_nodes.md`
-- `02-6_hybrid_retrieval.md`
+**Phase 2 — Graphe spectral** (corrigés d'après le mémo officiel)
+- `02-1_similarity_graph.md` — W=ΦΦᵀ seuillé (τ), sous-graphe BFS, deux régimes
+- `02-2_spectral_analysis.md` — Laplacien, Fiedler, **Cheeger**
+- `02-3_singular_nodes.md` — **pôles thématiques** (antipodes basses fréquences)
+- `02-4_hinge_nodes.md` — **champ géodésique** log-similarité
+- `02-5_theta_nodes.md` — **relaxation SDP de Lovász-θ**
+- `02-6_hybrid_retrieval.md` — agrégation `selection_tags` (3 labels)
+- `02-7_epistemologie_et_validation.md` — 3 niveaux de claim, failure modes, validation, refs
 
 **Phase 3 — Streamlit**
 - `03-1_streamlit_fundamentals.md`
