@@ -74,8 +74,8 @@ Tout est gratuit, tout tourne en local. Aucune carte bancaire requise.
 ### 1. Cloner le repo
 
 ```bash
-git clone https://github.com/jeulinmarc/eigenmind.git
-cd eigenmind/mvp
+git clone https://github.com/jeulinmarc/mvp-rag.git
+cd mvp-rag/mvp
 ```
 
 ### 2. Installer Docker Desktop
