@@ -19,11 +19,12 @@ Détail dans `theory/00_roadmap.md`.
 ```
 mvp-rag/
 ├── README.md                   # Ce fichier (à la racine)
-├── venv/                       # Environnement Python (gitignored, à la racine)
-├── src/                        # MVP fonctionnel à plat
-│   ├── docker-compose.yml      # Qdrant en local
-│   ├── requirements.txt        # Dépendances Python
-│   │
+├── docker-compose.yml          # Qdrant en local (infra → racine)
+├── requirements.txt            # Dépendances Python (→ racine)
+├── .env.example                # Gabarit de config (cp .env.example .env)
+├── qdrant_storage/             # Données Qdrant (gitignored, volume Docker)
+├── venv/                       # Environnement Python (gitignored)
+├── src/                        # Code source uniquement
 │   │   # Phase 1 — pipeline RAG
 │   ├── embed_text.py           # Sentence embeddings (MiniLM)
 │   ├── load_pdf.py             # Extraction PDF + chunking
@@ -167,14 +168,20 @@ python3 -m venv venv
 source venv/bin/activate
 
 # Installer les dépendances
-pip install -r src/requirements.txt
+pip install -r requirements.txt
 ```
 
-Tu sauras que le venv est actif quand ton prompt commence par `(venv)`. L'activation est indépendante du dossier courant : une fois `(venv)` actif, tu peux `cd src/` pour lancer Qdrant et Streamlit.
+Tu sauras que le venv est actif quand ton prompt commence par `(venv)`. L'activation est indépendante du dossier courant : tu lances **Qdrant depuis la racine** (`docker compose up -d`) et **Streamlit depuis `src/`** (`cd src && streamlit run streamlit_app.py`).
 
 ### 6. Configurer les variables d'environnement
 
-Crée un fichier `.env` à la racine de `src/` :
+Copie le gabarit fourni, à la **racine du repo**, puis ajuste si besoin :
+
+```bash
+cp .env.example .env
+```
+
+Contenu minimal :
 
 ```bash
 QDRANT_HOST=localhost
@@ -182,11 +189,11 @@ QDRANT_PORT=6333
 LLM_PROVIDER=ollama
 ```
 
-Le fichier `.env` est dans le `.gitignore`, il ne sera jamais commité.
+Le `.env` est dans le `.gitignore` (jamais commité) ; seul `.env.example` est versionné.
 
 ### 7. Lancer Qdrant
 
-Depuis `src/`, avec Docker Desktop actif :
+Depuis la **racine du repo**, avec Docker Desktop actif :
 
 ```bash
 docker compose up -d
@@ -213,7 +220,7 @@ curl -s http://localhost:6333/ > /dev/null && echo "Qdrant OK" || echo "Qdrant D
 curl -s http://localhost:11434/api/tags > /dev/null && echo "Ollama OK" || echo "Ollama DOWN"
 ```
 
-Si Qdrant est down : `docker compose up -d` depuis `src/`.
+Si Qdrant est down : `docker compose up -d` depuis la racine.
 Si Ollama est down : `brew services start ollama` (ou `ollama serve` en foreground).
 
 ### Ingérer un PDF

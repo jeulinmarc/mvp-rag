@@ -215,8 +215,15 @@ def render_code_pane(code_paths: list[str]) -> None:
 
 
 def _render_single_code(rel: str) -> None:
+    # Code files live in src/ ; infra files (docker-compose…) live at the repo root.
     path = MVP_DIR / rel
-    st.caption(f"💻 `src/{rel}`")
+    if not path.exists():
+        path = ROOT_DIR / rel
+    try:
+        shown = path.relative_to(ROOT_DIR)
+    except ValueError:
+        shown = rel
+    st.caption(f"💻 `{shown}`")
     st.code(read_text(path), language=code_language(path), line_numbers=True)
 
 
