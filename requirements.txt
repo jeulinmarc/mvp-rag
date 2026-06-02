@@ -1,5 +1,6 @@
 qdrant-client>=1.7.0
 sentence-transformers>=2.2.0
+torchvision>=0.16.0   # compagnon de torch ; évite l'import paresseux cassé de transformers (modèles image) lors de l'introspection du file-watcher Streamlit
 pypdf>=3.17.0
 langchain-text-splitters>=0.0.1
 python-dotenv>=1.0.0
