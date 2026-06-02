@@ -5,7 +5,7 @@
 Streamlit suit une convention de filesystem pour le multipage : tout fichier `.py` placé dans un dossier `pages/` à côté du script principal devient une page accessible via la sidebar.
 
 ```
-mvp/
+src/
 ├── streamlit_app.py        # entry point ("Home"), lancé par `streamlit run`
 └── pages/
     ├── 1_Ingest.py
@@ -93,7 +93,7 @@ Pour Eigenmind monolithe local : on n'a qu'un utilisateur à la fois, donc la di
 
 ## Erreurs courantes du multipage
 
-**Imports relatifs cassés.** Si tu importes `from ..mvp import xyz` dans une page, Streamlit ne sait pas gérer (chaque page est exécutée comme un script autonome). Solution : tous les modules helper (`embed_text.py`, `retrieve.py`, etc.) sont à plat dans `mvp/`, accessibles via imports absolus depuis n'importe quelle page tant qu'on lance Streamlit depuis `mvp/`.
+**Imports relatifs cassés.** Si tu importes `from ..mvp import xyz` dans une page, Streamlit ne sait pas gérer (chaque page est exécutée comme un script autonome). Solution : tous les modules helper (`embed_text.py`, `retrieve.py`, etc.) sont à plat dans `src/`, accessibles via imports absolus depuis n'importe quelle page tant qu'on lance Streamlit depuis `src/`.
 
 **`st.set_page_config` appelé plusieurs fois.** Cette fonction doit être appelée **une seule fois par session**, dans l'entry point. Si tu la mets aussi dans une page, crash. On la met uniquement dans `streamlit_app.py`.
 

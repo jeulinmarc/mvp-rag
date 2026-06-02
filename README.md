@@ -20,7 +20,7 @@ Détail dans `theory/00_roadmap.md`.
 mvp-rag/
 ├── README.md                   # Ce fichier (à la racine)
 ├── venv/                       # Environnement Python (gitignored, à la racine)
-├── mvp/                        # MVP fonctionnel à plat
+├── src/                        # MVP fonctionnel à plat
 │   ├── docker-compose.yml      # Qdrant en local
 │   ├── requirements.txt        # Dépendances Python
 │   │
@@ -157,7 +157,7 @@ Doit retourner un JSON listant les modèles installés.
 
 ### 5. Setup Python et dépendances
 
-Le venv vit à la **racine du repo** (`mvp-rag/venv/`), pas dans `mvp/`. Depuis la racine `mvp-rag/` :
+Le venv vit à la **racine du repo** (`mvp-rag/venv/`), pas dans `src/`. Depuis la racine `mvp-rag/` :
 
 ```bash
 # Créer le venv (à la racine du repo)
@@ -167,14 +167,14 @@ python3 -m venv venv
 source venv/bin/activate
 
 # Installer les dépendances
-pip install -r mvp/requirements.txt
+pip install -r src/requirements.txt
 ```
 
-Tu sauras que le venv est actif quand ton prompt commence par `(venv)`. L'activation est indépendante du dossier courant : une fois `(venv)` actif, tu peux `cd mvp/` pour lancer Qdrant et Streamlit.
+Tu sauras que le venv est actif quand ton prompt commence par `(venv)`. L'activation est indépendante du dossier courant : une fois `(venv)` actif, tu peux `cd src/` pour lancer Qdrant et Streamlit.
 
 ### 6. Configurer les variables d'environnement
 
-Crée un fichier `.env` à la racine de `mvp/` :
+Crée un fichier `.env` à la racine de `src/` :
 
 ```bash
 QDRANT_HOST=localhost
@@ -186,7 +186,7 @@ Le fichier `.env` est dans le `.gitignore`, il ne sera jamais commité.
 
 ### 7. Lancer Qdrant
 
-Depuis `mvp/`, avec Docker Desktop actif :
+Depuis `src/`, avec Docker Desktop actif :
 
 ```bash
 docker compose up -d
@@ -213,7 +213,7 @@ curl -s http://localhost:6333/ > /dev/null && echo "Qdrant OK" || echo "Qdrant D
 curl -s http://localhost:11434/api/tags > /dev/null && echo "Ollama OK" || echo "Ollama DOWN"
 ```
 
-Si Qdrant est down : `docker compose up -d` depuis `mvp/`.
+Si Qdrant est down : `docker compose up -d` depuis `src/`.
 Si Ollama est down : `brew services start ollama` (ou `ollama serve` en foreground).
 
 ### Ingérer un PDF

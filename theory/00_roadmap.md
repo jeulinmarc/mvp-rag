@@ -1,6 +1,6 @@
 # Eigenmind — Roadmap de recodage
 
-Ordre de travail : MVP fonctionnel d'abord (Phases 1-3 dans `mvp/`), puis refactor vers la structure du repo officiel (Phases 4-5 dans `final/`).
+Ordre de travail : MVP fonctionnel d'abord (Phases 1-3 dans `src/`), puis refactor vers la structure du repo officiel (Phases 4-5 dans `final/`).
 
 Pour chaque étape : un fichier de code + un document théorique dans `theory/`.
 
@@ -8,7 +8,7 @@ Pour chaque étape : un fichier de code + un document théorique dans `theory/`.
 
 ---
 
-## Phase 1 — MVP RAG end-to-end (dossier `mvp/`) ✅
+## Phase 1 — MVP RAG end-to-end (dossier `src/`) ✅
 
 But : un script CLI qui prend un PDF et répond à une question. Pas d'UI, pas de graphe.
 
@@ -27,7 +27,7 @@ But : un script CLI qui prend un PDF et répond à une question. Pas d'UI, pas d
 - [x] **1.7** Assemblage — `mini_rag.py`
   *MVP CLI fonctionnel end-to-end. Sous-commandes `ingest` / `query` / `ask` ; option `--mode dense|hybrid|compare` (voir 2.6).*
 
-## Phase 2 — Couche graphe spectrale (dossier `mvp/`) ✅
+## Phase 2 — Couche graphe spectrale (dossier `src/`) ✅
 
 But : enrichir le retrieval avec l'analyse spectrale du graphe sémantique.
 
@@ -45,7 +45,7 @@ But : enrichir le retrieval avec l'analyse spectrale du graphe sémantique.
   *Théorie (mémo) : agrégation `selection_tags` → tagging à 3 labels (Singular/Hinge/Theta), deux régimes top-k vs BFS, « chunks nommés pas vecteurs latents ». Code MVP : fusion par boosts (cos > 0.30 ; +0.10/+0.07/+0.05) sur `GraphAwareCache` — à aligner.*
   *Exposé dans le CLI (`mini_rag.py --mode hybrid`) et dans la page Chat. Le mode `compare` lance dense + hybride en parallèle et affiche le Δ retrieval + les deux réponses, pour mesurer l'impact de la couche spectrale.*
 
-## Phase 3 — Interface Streamlit (dossier `mvp/`) ✅
+## Phase 3 — Interface Streamlit (dossier `src/`) ✅
 
 But : transformer le CLI en app web utilisable.
 

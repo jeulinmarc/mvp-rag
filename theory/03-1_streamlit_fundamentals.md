@@ -129,7 +129,7 @@ Quand l'utilisateur modifie le slider, le script rerun avec la nouvelle valeur d
 Streamlit 1.10+ supporte nativement le multipage via un dossier `pages/` à côté du fichier principal :
 
 ```
-mvp/
+src/
 ├── streamlit_app.py        # page d'accueil (entry point)
 └── pages/
     ├── 1_Ingest.py
@@ -140,7 +140,7 @@ mvp/
 
 Le préfixe `N_` numérote l'ordre dans la sidebar. Le `_` devient un espace dans le label affiché. Streamlit génère automatiquement la navigation latérale.
 
-**Lancement** : `streamlit run streamlit_app.py` depuis le dossier `mvp/`. Streamlit détecte le dossier `pages/` et construit la nav.
+**Lancement** : `streamlit run streamlit_app.py` depuis le dossier `src/`. Streamlit détecte le dossier `pages/` et construit la nav.
 
 **Partage d'état entre pages** : `st.session_state` est partagé automatiquement entre toutes les pages de la même session. Si tu construis le cache dans `streamlit_app.py`, il est dispo dans `pages/2_Chat.py`. C'est ce qui rend l'architecture utilisable.
 

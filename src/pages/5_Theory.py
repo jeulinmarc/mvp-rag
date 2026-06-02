@@ -216,7 +216,7 @@ def render_code_pane(code_paths: list[str]) -> None:
 
 def _render_single_code(rel: str) -> None:
     path = MVP_DIR / rel
-    st.caption(f"💻 `mvp/{rel}`")
+    st.caption(f"💻 `src/{rel}`")
     st.code(read_text(path), language=code_language(path), line_numbers=True)
 
 
