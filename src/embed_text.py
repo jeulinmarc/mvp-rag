@@ -13,10 +13,19 @@ _model = None
 
 
 def get_model() -> SentenceTransformer:
-    """Lazy-load the model. First call downloads ~90MB, subsenquents calls reuse."""
+    """Charge le modèle (lazy). Utilise le cache local en priorité : aucun appel
+    réseau si le modèle est déjà présent — ce qui évite la re-vérification HF à
+    chaque démarrage et contourne le bug httpx « Cannot send a request, as the
+    client has been closed ». Ne télécharge (~90 Mo) qu'au tout premier appel,
+    si le modèle est absent du cache."""
     global _model
     if _model is None:
-        _model = SentenceTransformer(MODEL_NAME, device="cpu")
+        try:
+            # cache d'abord, sans réseau
+            _model = SentenceTransformer(MODEL_NAME, device="cpu", local_files_only=True)
+        except Exception:
+            # absent du cache → téléchargement unique
+            _model = SentenceTransformer(MODEL_NAME, device="cpu")
     return _model
 
 def embed(text: str | list[str]) -> np.ndarray:
