@@ -1,15 +1,23 @@
-qdrant-client>=1.7.0
-sentence-transformers>=2.2.0
-torchvision>=0.16.0   # compagnon de torch ; évite l'import paresseux cassé de transformers (modèles image) lors de l'introspection du file-watcher Streamlit
-pypdf>=3.17.0
-pytesseract>=0.3.10   # OCR (nécessite le binaire `tesseract` : voir docs/INSTALL.md)
-pdf2image>=1.16.0     # rend les pages PDF en images pour l'OCR (nécessite `poppler`)
-Pillow>=9.0.0
-langchain-text-splitters>=0.0.1
-python-dotenv>=1.0.0
-openai>=1.0.0
-streamlit>=1.30.0
-plotly>=5.18.0
-pandas>=2.0.0
-networkx>=3.0
-scipy>=1.10.0
+# Versions épinglées (==) sur l'ensemble testé et fonctionnel.
+# But : install reproductible — un clone frais obtient le même environnement,
+# sans récupérer une "dernière version" qui casse (cf. pièges transformers v5).
+# mpmath n'est pas listé : dépendance transitive (torch → sympy → mpmath),
+# laissée au résolveur pip.
+
+qdrant-client==1.18.0
+sentence-transformers==5.5.1
+torch==2.12.0
+torchvision==0.27.0          # compagnon de torch ; évite l'import paresseux cassé de transformers (modèles image) lors de l'introspection du file-watcher Streamlit
+transformers==5.9.0
+pypdf==6.12.2
+pytesseract==0.3.13          # OCR (nécessite le binaire `tesseract` : voir docs/INSTALL.md)
+pdf2image==1.17.0            # rend les pages PDF en images pour l'OCR (nécessite `poppler`)
+Pillow==12.2.0
+langchain-text-splitters==1.1.2
+python-dotenv==1.2.2
+openai==2.40.0
+streamlit==1.58.0
+plotly==6.7.0
+pandas==3.0.3
+networkx==3.6.1
+scipy==1.17.1
