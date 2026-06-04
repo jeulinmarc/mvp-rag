@@ -10,12 +10,16 @@ import plotly.graph_objects as go
 
 from hybrid_retrieve import GraphAwareCache
 from store_chunks import COLLECTION_NAME
+from collection_ui import collection_selector
 
 st.title("🕸️ Graph Explorer")
 st.caption(
     "Visualisation du graphe sémantique. Les nœuds colorés sont les "
     "Singular (orange), Hinge (rouge) et Theta (bleu). Survole un nœud pour voir son contenu."
 )
+
+# Collection visualisée (le changement invalide le cache graphe).
+active_collection = collection_selector()
 
 # Palette
 COLOR_MAINSTREAM = "#9CA3AF"   # gray-400
@@ -37,29 +41,29 @@ TYPE_COLOR = {
 # Ensure cache and graph are available
 # ---------------------------------------------------------------------------
 
-def ensure_graph_cache() -> GraphAwareCache | None:
+def ensure_graph_cache(collection: str) -> GraphAwareCache | None:
     """Build cache once per session, after each ingest invalidates it."""
     if st.session_state.get("graph_cache") is not None:
         return st.session_state.graph_cache
 
     from streamlit_app import get_qdrant_client
     client = get_qdrant_client()
-    if not client.collection_exists(COLLECTION_NAME):
+    if not client.collection_exists(collection):
         st.warning("Aucune collection Qdrant trouvée. Va sur la page Ingest pour indexer un PDF.")
         return None
-    info = client.get_collection(COLLECTION_NAME)
+    info = client.get_collection(collection)
     if info.points_count < 5:
         st.warning(f"Seulement {info.points_count} chunks indexés. Trop peu pour un graphe pertinent.")
         return None
 
     with st.spinner("Construction du graphe sémantique…"):
         cache = GraphAwareCache()
-        cache.build(collection=COLLECTION_NAME)
+        cache.build(collection=collection)
         st.session_state.graph_cache = cache
     return cache
 
 
-cache = ensure_graph_cache()
+cache = ensure_graph_cache(active_collection)
 if cache is None:
     st.stop()
 
@@ -91,14 +95,14 @@ with st.sidebar:
 # ---------------------------------------------------------------------------
 
 @st.cache_resource(show_spinner=False)
-def get_graph_and_layout(_cache_signature: int, layout_name: str):
+def get_graph_and_layout(_cache_signature: int, layout_name: str, collection: str):
     """
     Rebuild the graph from Qdrant + compute the layout.
     `_cache_signature` is bumped whenever ingestion changes the corpus —
     here we pass len(cache.vectors) as a proxy proxy for "corpus changed".
     """
     from build_graph import build_graph_from_qdrant
-    G = build_graph_from_qdrant()
+    G = build_graph_from_qdrant(collection=collection)
 
     if layout_name == "Kamada-Kawai":
         pos = nx.kamada_kawai_layout(G)
@@ -111,7 +115,7 @@ def get_graph_and_layout(_cache_signature: int, layout_name: str):
 
 # Use len(special vectors cached) as a rough signature
 sig = len(cache.vectors) + sum(1 for _ in cache.singular_ids) * 100
-G, pos = get_graph_and_layout(sig, layout_choice)
+G, pos = get_graph_and_layout(sig, layout_choice, active_collection)
 
 
 # ---------------------------------------------------------------------------

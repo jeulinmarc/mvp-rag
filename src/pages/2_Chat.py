@@ -8,16 +8,20 @@ import streamlit as st
 from hybrid_retrieve import GraphAwareCache, hybrid_retrieve, K_FINAL
 from ask_llm import build_messages, get_client, PROVIDER, PROVIDER_CONFIG, TEMPERATURE, MAX_TOKENS
 from store_chunks import COLLECTION_NAME
+from collection_ui import collection_selector
 
 st.title("💬 Chat")
 st.caption("Pose une question en langage naturel. Le retrieval combine top-k cosinus et signaux graphe.")
+
+# Collection interrogée (le changement invalide le cache graphe).
+active_collection = collection_selector()
 
 
 # ---------------------------------------------------------------------------
 # Build / restore the graph-aware cache
 # ---------------------------------------------------------------------------
 
-def ensure_graph_cache() -> GraphAwareCache | None:
+def ensure_graph_cache(collection: str) -> GraphAwareCache | None:
     """Build the GraphAwareCache once per session, after each ingest invalidates."""
     if st.session_state.get("graph_cache") is not None:
         return st.session_state.graph_cache
@@ -25,10 +29,10 @@ def ensure_graph_cache() -> GraphAwareCache | None:
     # Check that the collection has enough chunks for a meaningful graph
     from streamlit_app import get_qdrant_client
     client = get_qdrant_client()
-    if not client.collection_exists(COLLECTION_NAME):
+    if not client.collection_exists(collection):
         st.warning("Aucune collection Qdrant trouvée. Va sur la page Ingest pour indexer un PDF.")
         return None
-    info = client.get_collection(COLLECTION_NAME)
+    info = client.get_collection(collection)
     if info.points_count < 5:
         st.warning(
             f"Seulement {info.points_count} chunks indexés — pas assez pour construire un graphe pertinent. "
@@ -38,12 +42,12 @@ def ensure_graph_cache() -> GraphAwareCache | None:
 
     with st.spinner("Construction du graphe sémantique et de la décomposition spectrale…"):
         cache = GraphAwareCache()
-        cache.build(collection=COLLECTION_NAME)
+        cache.build(collection=collection)
         st.session_state.graph_cache = cache
     return cache
 
 
-cache = ensure_graph_cache()
+cache = ensure_graph_cache(active_collection)
 
 
 # ---------------------------------------------------------------------------
@@ -105,11 +109,11 @@ if cache is not None:
             with st.status("Recherche…", expanded=show_chunks) as status:
                 t0 = time.time()
                 if use_hybrid:
-                    results = hybrid_retrieve(question, cache, k_final=top_k)
+                    results = hybrid_retrieve(question, cache, k_final=top_k, collection=active_collection)
                 else:
                     # Fallback to pure dense retrieve for comparison
                     from retrieve import retrieve as dense_retrieve
-                    raw = dense_retrieve(question, k=top_k)
+                    raw = dense_retrieve(question, k=top_k, collection=active_collection)
                     # Adapt to HybridResult-ish structure for display uniformity
                     results = []
                     for r in raw:
