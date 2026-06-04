@@ -53,11 +53,13 @@ def check_ollama() -> tuple[bool, str]:
 
 
 def collection_stats() -> dict:
+    from collection_ui import get_active_collection
     try:
         client = get_qdrant_client()
-        if not client.collection_exists(COLLECTION_NAME):
+        collection = get_active_collection()
+        if not client.collection_exists(collection):
             return {"exists": False, "count": 0}
-        info = client.get_collection(COLLECTION_NAME)
+        info = client.get_collection(collection)
         return {"exists": True, "count": info.points_count}
     except Exception:
         return {"exists": False, "count": 0}
@@ -87,6 +89,9 @@ with st.sidebar:
         st.error(f"Ollama DOWN · {ollama_info[:50]}", icon="❌")
 
     st.divider()
+
+    from collection_ui import collection_selector
+    active_collection = collection_selector()
 
     stats = collection_stats()
     if stats["exists"]:

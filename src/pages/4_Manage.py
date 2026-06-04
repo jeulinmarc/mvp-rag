@@ -7,9 +7,14 @@ import pandas as pd
 from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 from store_chunks import COLLECTION_NAME
+from collection_ui import collection_selector
 
 st.title("🗂️ Manage")
 st.caption("Liste les documents indexés, supprime un fichier spécifique, ou vide toute la collection.")
+
+# Collection gérée par cette page.
+active_collection = collection_selector()
+st.caption(f"Collection : **{active_collection}**")
 
 
 # ---------------------------------------------------------------------------
@@ -21,20 +26,20 @@ def get_client():
     return get_qdrant_client()
 
 
-def list_indexed_files() -> dict:
+def list_indexed_files(collection: str) -> dict:
     """
     Scroll the collection and aggregate by filename.
     Returns: {filename: {"chunks": int, "pages": set[int]}}
     """
     client = get_client()
-    if not client.collection_exists(COLLECTION_NAME):
+    if not client.collection_exists(collection):
         return {}
 
     files = {}
     offset = None
     while True:
         points, offset = client.scroll(
-            collection_name=COLLECTION_NAME,
+            collection_name=collection,
             limit=512,
             offset=offset,
             with_payload=True,
@@ -53,14 +58,14 @@ def list_indexed_files() -> dict:
     return files
 
 
-def delete_file(filename: str) -> int:
+def delete_file(filename: str, collection: str) -> int:
     """Delete all chunks with the given filename. Returns approximate count deleted."""
     client = get_client()
     # Count first (approximate)
-    files = list_indexed_files()
+    files = list_indexed_files(collection)
     n = files.get(filename, {}).get("chunks", 0)
     client.delete(
-        collection_name=COLLECTION_NAME,
+        collection_name=collection,
         points_selector=Filter(must=[
             FieldCondition(key="filename", match=MatchValue(value=filename))
         ]),
@@ -68,11 +73,11 @@ def delete_file(filename: str) -> int:
     return n
 
 
-def purge_collection() -> None:
+def purge_collection(collection: str) -> None:
     """Drop the entire collection. It will be recreated on next ingestion."""
     client = get_client()
-    if client.collection_exists(COLLECTION_NAME):
-        client.delete_collection(COLLECTION_NAME)
+    if client.collection_exists(collection):
+        client.delete_collection(collection)
 
 
 def invalidate_caches():
@@ -85,7 +90,7 @@ def invalidate_caches():
 # List of indexed files
 # ---------------------------------------------------------------------------
 
-files = list_indexed_files()
+files = list_indexed_files(active_collection)
 
 if not files:
     st.info("Aucun fichier indexé pour l'instant. Va sur la page Ingest pour démarrer.")
@@ -137,7 +142,7 @@ if st.session_state.get("pending_delete"):
     st.warning(f"⚠️ Confirmer la suppression de **{target}** ? Cette action est irréversible.")
     c1, c2 = st.columns(2)
     if c1.button("✅ Oui, supprimer définitivement", type="primary", use_container_width=True):
-        n = delete_file(target)
+        n = delete_file(target, active_collection)
         invalidate_caches()
         st.session_state.pending_delete = None
         st.success(f"Supprimé : {n} chunks de **{target}**")
@@ -168,7 +173,7 @@ with st.expander("☠️ Zone dangereuse — purge complète"):
         )
         c1, c2 = st.columns(2)
         if c1.button("✅ Oui, tout supprimer", type="primary", use_container_width=True):
-            purge_collection()
+            purge_collection(active_collection)
             invalidate_caches()
             st.session_state.pending_purge = False
             st.session_state.chat_history = []

@@ -9,12 +9,17 @@ import streamlit as st
 
 from load_pdf import load_and_chunk
 from store_chunks import upsert_chunks, COLLECTION_NAME
+from collection_ui import collection_selector
 
 st.title("📥 Ingest")
 st.caption(
     "Uploade un PDF pour l'indexer. L'ingestion est idempotente : "
     "réingérer le même fichier ne crée pas de doublons."
 )
+
+# Choisis (ou crée) la collection Qdrant cible.
+active_collection = collection_selector(allow_create=True)
+st.caption(f"Collection cible : **{active_collection}**")
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +98,7 @@ if uploaded_file is not None:
             # Step 3 — embed + upsert
             progress.progress(0.6, text=f"Embedding et upsert de {len(chunks)} chunks...")
             t0 = time.time()
-            n = upsert_chunks(chunks)
+            n = upsert_chunks(chunks, collection=active_collection)
             t_upsert = time.time() - t0
 
             # Step 4 — invalidate graph cache
