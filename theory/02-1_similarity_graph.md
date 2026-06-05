@@ -53,6 +53,85 @@ ces liens ANN vers l'extérieur depuis le prompt.
 > `W = ΦΦᵀ` restaure ensuite la symétrie), et *dépendance à l'encodeur* (la connectivité
 > sémantique ne vaut que ce que vaut l'embedding).
 
+### Vue d'ensemble du parcours
+
+```mermaid
+flowchart LR
+    q["prompt q"]
+    subgraph V["sous-graphe de travail V — borné par N_max"]
+        direction LR
+        a0(("anneau 0<br/>K_0 voisins<br/>du prompt"))
+        a1(("anneau 1<br/>voisins<br/>des voisins"))
+        a2(("anneau 2<br/>…"))
+    end
+    q -->|seed top-k| a0
+    a0 -->|hop 1| a1
+    a1 -->|hop 2| a2
+    a2 -.->|frontière vidée<br/>ou budget atteint| stop([arrêt])
+```
+
+Le prompt amorce un **anneau 0** (ses `K_0` plus proches voisins), puis chaque anneau engendre le
+suivant. L'expansion s'arrête dès que la file est vide *ou* que le budget `N_max` est atteint.
+
+### Pseudo-code de l'expansion
+
+```python
+from collections import deque
+
+def explore(prompt, K_0, N_max):
+    seed = ann_search(embed(prompt), k=K_0)     # K_0 voisins du prompt
+    V = set(seed)                               # nœuds retenus (visités)
+    Q = deque(seed)                             # frontière à étendre
+    while Q and len(V) < N_max:
+        v = Q.popleft()                         # FIFO ⇒ parcours en largeur
+        for u in ann_search(point_id=v, k=K_0): # voisins ANN de v
+            if u not in V:                      # déduplication
+                V.add(u)
+                Q.append(u)                     # u rejoint la frontière
+    return fetch_vectors_and_payloads(V)        # un seul appel groupé
+```
+
+Trois invariants portent toute la sémantique du parcours :
+
+- **File FIFO** (`popleft`) : on épuise un anneau de voisinage *avant* de passer au suivant —
+  c'est ce qui rend l'expansion *en largeur* (isotrope) plutôt qu'*en profondeur* (filante).
+- **Ensemble visité `V`** : un point entré dans `V` n'est jamais ré-étendu ni dupliqué ; le
+  sous-graphe reste un ensemble de nœuds *uniques*.
+- **Requête par ID** : à l'étape 2 on interroge l'ANN avec un *ID de point déjà stocké*
+  (`point_id=v`), pas un nouvel embedding — d'où un coût marginal quasi nul par hop.
+
+### Le BFS choisit les **nœuds**, `τ` choisit les **arêtes**
+
+Distinction structurante (et souvent ratée) : le BFS ne sert qu'à **sélectionner l'ensemble de
+nœuds `V`**. Les arêtes ANN suivies pendant le parcours (orientées, k-NN, approchées) sont
+**jetées** une fois `V` figé. Le graphe analysé en §3.1 *recalcule* ses arêtes par seuillage de
+`W = ΦΦᵀ` à `τ`.
+
+| | Rôle | Propriétés |
+|---|---|---|
+| Arêtes ANN (BFS) | *recruter* les nœuds | orientées, k-NN, approchées — éphémères |
+| Arêtes `W ≥ τ` (§3.1) | *structurer* l'analyse | symétriques, par seuil, exactes — persistantes |
+
+Conséquence : deux nœuds peuvent être voisins dans le BFS sans l'être dans `W` (similarité `< τ`),
+et inversement deux nœuds recrutés par des chemins différents peuvent recevoir une arête forte
+dans `W`.
+
+### Profondeur, dérive sémantique et frontière
+
+Chaque hop éloigne d'un cran du prompt. Comme l'embedding n'est fiable que *localement* (hypothèse
+de lissité, cf. `02-7`), la similarité au prompt décroît avec la profondeur : c'est la **dérive
+sémantique**. Le BFS la contient par construction — en explorant *d'abord* les anneaux proches, il
+remplit le budget `N_max` avec les nœuds les plus pertinents avant d'atteindre la périphérie. Un
+DFS ferait l'inverse (filer loin trop tôt) ; un seul top-k plat, lui, raterait les *ponts* entre
+sous-thèmes que seuls les hops successifs révèlent.
+
+### Coût
+
+L'expansion fait **au plus `N_max` lookups ANN** (un par nœud défilé), chacun en `O(k·log N)` sur
+l'index HNSW (`N` = taille du corpus). Le plafond `N_max = MAX_CHUNKS_FOR_CONTEXT` n'est pas un
+simple réglage de performance : il maintient `n = |V|` dans la fenêtre où les trois stratégies de
+la phase 2 restent calculables (`O(n³)` pour Singular — cf. table de complexité en `02-7`).
+
 ## Étape 1 — la matrice de similarité cosinus (`singular.py`, §3.1)
 
 ### Matrice d'embedding et matrice de Gram
@@ -67,6 +146,36 @@ W_raw = Φ Φᵀ ∈ ℝ^{n×n} ,    W_raw[i,j] = φ_iᵀ φ_j ≈ cos∠(φ_i, 
 Symétrique, semi-définie positive, de rang ≤ `d`. Ses valeurs propres non nulles sont exactement
 les **valeurs singulières au carré** de `Φ` (d'où le nom du module `singular.py`).
 
+### Pourquoi produit scalaire = cosinus ?
+
+En général `cos∠(a,b) = aᵀb / (‖a‖·‖b‖)`. Comme l'encodeur **ℓ₂-normalise** ses sorties
+(`‖φ_i‖ = 1`, cf. `01-2`), le dénominateur vaut 1 et le **produit scalaire devient directement le
+cosinus**. C'est précisément ce qui autorise à calculer toute la matrice en *un seul* produit
+matriciel `Φ Φᵀ` au lieu de `n²` divisions. Le `≈` du tableau ci-dessus ne traduit que deux
+bruits résiduels : la normalisation flottante (`‖φ_i‖ = 1 ± ε`) et l'approximation HNSW en amont.
+
+### Lecture géométrique
+
+Chaque `W_raw[i,j] = cos∠(φ_i, φ_j) ∈ [−1, 1]` mesure l'**angle** entre deux directions de sens :
+
+| Valeur | Angle | Lecture sémantique |
+|---|---|---|
+| `≈ 1` | ~0° | les deux chunks pointent dans la même direction → même sujet |
+| `≈ 0` | ~90° | directions orthogonales → sujets sans rapport |
+| `< 0` | >90° | directions opposées → rare sur du texte naturel |
+
+Les embeddings de texte naturel se concentrent dans un **cône étroit** (anisotropie) : les valeurs
+réelles vivent surtout dans `[0.2, 0.9]`, ce qui explique qu'un seuil utile se situe vers `0.65` et
+non `0`. La matrice de Gram n'est donc pas un tableau de scores arbitraires : c'est la **table des
+angles deux-à-deux** du nuage de points restreint au sous-graphe.
+
+### Coût de calcul
+
+Le produit `Φ Φᵀ` coûte `O(n²·d)` : `n²` paires, chacune un produit scalaire en dimension `d`. Pour
+un sous-graphe analyste (`n` ≲ quelques centaines, `d = 384`) c'est un unique appel BLAS, sans
+boucle Python ; la mémoire est `O(n²)`. C'est l'`n²` qui justifie, là encore, le plafond
+`N_max = MAX_CHUNKS_FOR_CONTEXT` du BFS.
+
 ### Sparsification par **seuil** (et non par k-NN)
 
 C'est ici que notre MVP divergeait. Le mémo **ne fait pas de k-NN** : il applique un **seuil de
@@ -78,6 +187,42 @@ W[i,j] = W_raw[i,j]   si W_raw[i,j] ≥ τ  et  i ≠ j
 ```
 
 La diagonale est forcée à zéro : `W_ii = 0`.
+
+#### Exemple numérique (n = 4, τ = 0.65)
+
+Soit la Gram brute (symétrique, diagonale à 1) :
+
+```
+        c0     c1     c2     c3
+c0  [ 1.00   0.81   0.42   0.68 ]
+c1  [ 0.81   1.00   0.30   0.71 ]
+c2  [ 0.42   0.30   1.00   0.55 ]
+c3  [ 0.68   0.71   0.55   1.00 ]
+```
+
+Après seuillage à `τ = 0.65` et diagonale annulée :
+
+```
+        c0     c1     c2     c3
+c0  [ 0      0.81   0      0.68 ]
+c1  [ 0.81   0      0      0.71 ]
+c2  [ 0      0      0      0    ]   ← c2 isolé : aucune arête ≥ τ
+c3  [ 0.68   0.71   0      0    ]
+```
+
+Lecture : `{c0, c1, c3}` forment un triangle thématique ; `c2`, recruté par le BFS mais trop
+faiblement lié, devient un **nœud isolé** (degré 0). Le seuillage agit donc aussi comme *filtre de
+pertinence* a posteriori sur les nœuds que le BFS avait acceptés.
+
+#### Seuil vs k-NN : la symétrie est gratuite
+
+Le critère `W_raw[i,j] ≥ τ` est **symétrique par construction** : si l'arête `(i,j)` passe, l'arête
+`(j,i)` aussi (c'est la même valeur). Aucune réparation n'est nécessaire. Un k-NN, lui, est
+*intrinsèquement orienté* — `j` peut compter parmi les `k` plus proches de `i` sans réciproque — et
+impose un post-traitement (union ou intersection) pour rétablir la symétrie. Le seuil évite ce
+détour et donne un nombre d'arêtes **variable par nœud** (un hub dense en garde beaucoup, un nœud
+périphérique peu), là où le k-NN impose un degré quasi constant `≈ k` même là où il n'a pas de
+sens.
 
 ### Pourquoi zéro sur la diagonale ?
 
